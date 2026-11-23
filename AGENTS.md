@@ -21,11 +21,11 @@
 
 - Change the TypeScript, Python and ES3 forms together. `test/api-parity.test.mjs` compares their public names and refusal codes from the built files; keep it green and add a probe for every new refusal.
 - Add case-table rows; never change an existing row, message text or exception type. Callers pin a release and read them.
-- Keep `es3/exact-time.jsx` free of syntax newer than ES3 (`node test/test_table.mjs --es3` checks it).
+- Keep `es3/exact-time.jsx` free of syntax newer than ES3. `node test/test_table.mjs --es3` scans it for a list of known newer constructs and runs the case table in a VM; the scan is not a full ES3 parser, so passing it is not proof.
 
 ## Review and release
 
-- A code change gets one independent review at the exact head that will merge. A documents-only change needs the automatic checks and no review.
+- A code change gets one independent review at the exact head that will merge. A change to prose documents only needs the automatic checks and no review. A change to this file is reviewed like code, because agents act on it.
 - Never commit working papers (`BRIEF-*`, `STATUS-*`, `REVIEW-*`, `STEER-*`, `MUTANTS-*`).
 - Release: set the version in `package.json` and `package-lock.json`, add the `CHANGELOG.md` entry, merge, and wait for CI on `main` to pass at that commit. Then push the tag `vX.Y.Z`; the workflow attaches the files and `SHA256SUMS`.
 - A release is not done until it has been downloaded and checked: `gh release download vX.Y.Z --dir <new-dir>` then `shasum -a 256 -c SHA256SUMS` in that directory.
