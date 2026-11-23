@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { expect, test, vi } from "vitest";
-import type { Case, EntryCase } from "./time-contract-oracle.js";
+import type { Case, EntryCase, TickCase } from "./time-contract-oracle.js";
 
-const table = JSON.parse(readFileSync(new URL("../contracts/time-cases.json", import.meta.url), "utf8")) as { cases: Case[]; entryCases: EntryCase[] };
+const table = JSON.parse(readFileSync(new URL("../contracts/time-cases.json", import.meta.url), "utf8")) as { cases: Case[]; entryCases: EntryCase[]; tickCases: TickCase[] };
 
 function unavailableExports(names: string[], module: string) {
   const exports = Object.create(null);
@@ -27,7 +27,7 @@ test("the oracle recomputes every table row with production modules unavailable"
     for (const name of exactNames) expect(() => Reflect.get(exact, name)).toThrow("production module called from the oracle");
     for (const name of rateNames) expect(() => Reflect.get(rate, name)).toThrow("production module called from the oracle");
 
-    const { oracle, oracleRefusal, entryOracle } = await import("./time-contract-oracle.js");
+    const { oracle, oracleRefusal, entryOracle, tickOracle } = await import("./time-contract-oracle.js");
     let completed = 0;
     for (const row of table.cases) {
       if (row.refused) expect(oracleRefusal(row), row.id).toBe(row.refused);
@@ -38,7 +38,11 @@ test("the oracle recomputes every table row with production modules unavailable"
       expect(entryOracle(row), row.id).toEqual(row.refused ?? row.expected);
       completed++;
     }
-    const total = table.cases.length + table.entryCases.length;
+    for (const row of table.tickCases) {
+      expect(tickOracle(row), row.id).toEqual(row.refused ?? row.expected);
+      completed++;
+    }
+    const total = table.cases.length + table.entryCases.length + table.tickCases.length;
     expect(completed).toBe(total);
     process.stdout.write(`independent oracle completed ${completed} of ${total}\n`);
   } finally {

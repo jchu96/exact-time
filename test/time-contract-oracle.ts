@@ -27,7 +27,7 @@ export function oracleLabel(frame: bigint, num: number, den: number, drop: boole
   const minute = cycle * 10n + BigInt(label.slice(0, 2));
   return `${String(minute / 60n).padStart(2, "0")}:${String(minute % 60n).padStart(2, "0")}${label.slice(2)}`;
 }
-function rateParts(row: Case) {
+function rateParts(row: Pick<Case, "rate">) {
   let num = BigInt(row.rate?.num ?? 1000), den = BigInt(row.rate?.den ?? 1);
   let a = num, b = den;
   while (b !== 0n) { const r = a % b; a = b; b = r; }
@@ -149,3 +149,30 @@ export type EntryCase = {
   | { op: "snapRange"; endInput: string }
   | { op: "fromPremiereMilliseconds" | "toPremiereMilliseconds" }
 );
+
+export type TickCase = { id: string; expected?: unknown; refused?: string } & (
+  | { op: "ticksAtGrid"; frames: string; grid: string }
+  | { op: "fromContainingTicks"; ticks: string; clock: string; rate?: { num: number; den: number } }
+);
+
+export function tickOracle(row: TickCase) {
+  if (row.op === "ticksAtGrid") {
+    const grid = BigInt(row.grid);
+    if (grid === 0n) return "INVALID_INPUT";
+    // Add by doubling so either operand may exceed the safe integer range.
+    let ticks = 0n, frames = BigInt(row.frames);
+    for (let copies = grid; copies > 0n; copies >>= 1n) {
+      if (copies & 1n) ticks += frames;
+      frames += frames;
+    }
+    return String(ticks);
+  }
+  const { num, den } = rateParts(row);
+  const frame = 254016000000n * den;
+  if (frame % num !== 0n) return "UNREPRESENTABLE";
+  const instant = BigInt(row.ticks) * num;
+  let count = 0n;
+  while ((count + 1n) * frame <= instant) count++;
+  return { clock: row.clock, frames: String(count), rate: { num: Number(num), den: Number(den) },
+    unit: row.rate ? "video-frame" : "millisecond" };
+}

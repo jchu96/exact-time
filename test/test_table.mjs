@@ -71,7 +71,20 @@ for (const c of table.entryCases) {
   entryCount++;
 }
 assert.deepEqual([legacyCount, entryCount], [66, 33], 'MISS T8: entry rows not run');
+function runTick(row) {
+  if (row.op === 'ticksAtGrid') return t.ticksAtGrid(row.frames, row.grid);
+  assert.equal(row.op, 'fromContainingTicks');
+  const time = t.fromContainingTicks(row.clock, row.ticks, row.rate);
+  return {...time, frames:String(time.frames), rate:{...time.rate}};
+}
+let tickCount = 0;
+for (const row of table.tickCases) {
+  if (row.refused) assert.throws(() => runTick(row), {code:row.refused}, row.id);
+  else assert.deepEqual(runTick(row), row.expected, row.id);
+  tickCount++;
+}
+assert.equal(tickCount, 8, 'tick rows run');
 const rate = {num:25, den:1};
 assert.throws(() => t.snapDecimalSeconds('source', '1', rate), /frame edge is required/, 'MISS T6: default edge accepted');
 assert.equal(String(t.snapDecimalSeconds('source', '0.039999999999999999999', rate, 'end').frames), '0', 'MISS T9: decimal lost a digit');
-console.log(`${cjs ? 'COMMONJS' : es ? 'EXTENDSCRIPT' : 'ES MODULE'} TABLE OK: ${legacyCount + entryCount} cases and available inverses (66 legacy + 33 entry)`);
+console.log(`${cjs ? 'COMMONJS' : es ? 'EXTENDSCRIPT' : 'ES MODULE'} TABLE OK: ${legacyCount + entryCount + tickCount} cases and available inverses (66 legacy + 33 entry + ${tickCount} tick)`);

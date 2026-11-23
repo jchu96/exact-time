@@ -1,19 +1,21 @@
+import { fail } from "./refusal.js";
+
 export type FrameRate = { num: number; den: number };
 export type TimecodeSpec = { rate: FrameRate; dropFrame: boolean; rateOrigin: "declared" | "media" };
 
 function fields(value: unknown, allowed: string[]): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new TypeError("Expected an object.");
+    fail("INVALID_RATE", new TypeError("Expected an object."));
   }
   for (const key in value) {
-    if (!allowed.includes(key)) throw new TypeError(`Unexpected field: ${key}`);
+    if (!allowed.includes(key)) fail("INVALID_RATE", new TypeError(`Unexpected field: ${key}`));
   }
   return value as Record<string, unknown>;
 }
 
 function positiveInteger(value: unknown): number {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1) {
-    throw new RangeError("Rate must contain positive safe whole numbers.");
+    fail("INVALID_RATE", new RangeError("Rate must contain positive safe whole numbers."));
   }
   return value;
 }
@@ -38,14 +40,14 @@ export const timecodeSpecSchema = validator((value): TimecodeSpec => {
   const rate = rateSchema.parse(spec.rate);
   const { dropFrame, rateOrigin } = spec;
   if (typeof dropFrame !== "boolean" || (rateOrigin !== "declared" && rateOrigin !== "media")) {
-    throw new TypeError("Expected a drop-frame choice and declared or media rate origin.");
+    fail("INVALID_RATE", new TypeError("Expected a drop-frame choice and declared or media rate origin."));
   }
-  if (dropFrame && !isDropRate(rate)) throw new RangeError("Drop-frame requires 30000/1001 or 60000/1001.");
+  if (dropFrame && !isDropRate(rate)) fail("INVALID_RATE", new RangeError("Drop-frame requires 30000/1001 or 60000/1001."));
   return { rate, dropFrame, rateOrigin };
 });
 
 export const ACCEPTED_RATES = "24, 25, 30, 48, 50, 60; 23.976, 47.952; 29.97df, 29.97ndf, 59.94df, 59.94ndf; N/D (optionally :df or :ndf); from-media, from-media:df, from-media:ndf";
-export function rateError(): never { throw new Error(`Unsupported or ambiguous timecode rate. Accepted forms: ${ACCEPTED_RATES}. Drop-frame must be stated for 30000/1001 and 60000/1001.`); }
+export function rateError(): never { fail("INVALID_RATE", new Error(`Unsupported or ambiguous timecode rate. Accepted forms: ${ACCEPTED_RATES}. Drop-frame must be stated for 30000/1001 and 60000/1001.`)); }
 export function rationalRate(num: number, den: number): FrameRate {
   rateSchema.parse({ num, den });
   let a = num; let b = den;
@@ -53,8 +55,12 @@ export function rationalRate(num: number, den: number): FrameRate {
   return { num: num / a, den: den / a };
 }
 export function isDropRate(rate: FrameRate): boolean {
-  return BigInt(rate.num) * BigInt(1001) === BigInt(30000) * BigInt(rate.den)
-    || BigInt(rate.num) * BigInt(1001) === BigInt(60000) * BigInt(rate.den);
+  try {
+    return BigInt(rate.num) * BigInt(1001) === BigInt(30000) * BigInt(rate.den)
+      || BigInt(rate.num) * BigInt(1001) === BigInt(60000) * BigInt(rate.den);
+  } catch (error) {
+    return fail("INVALID_RATE", error as Error);
+  }
 }
 export function parseTimecodeRate(value: string): TimecodeSpec {
   const match = /^(.*?)(?::?(ndf|df))?$/.exec(value);

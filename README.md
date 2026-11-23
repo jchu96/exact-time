@@ -9,6 +9,8 @@ A video timestamp can fall between two frames. exact-time lets an editing panel,
 | Decimal seconds, as text | `snapDecimalSeconds(clock, seconds, rate, edge)` | `"start"` rounds up to the next boundary, `"end"` rounds down, and `"instant"` picks the frame containing the time. An exact boundary stays put. The edge is required. |
 | Whole milliseconds an editor wrote by rounding a frame start down | `fromPremiereMilliseconds(clock, ms, rate)` | Recovers the frame that wrote that value. A gap reports the neighboring frames. `toPremiereMilliseconds(time)` writes the value back. Both entries accept rates up to and including 1000 frames per second. |
 | A whole frame count or a tick count on a frame boundary | `exactTime(clock, frames, rate)` or `fromTicks(clock, ticks, rate)` | Preserves the exact position. The tick grid has 254,016,000,000 ticks per second. |
+| A tick count anywhere within a frame | `fromContainingTicks(clock, ticks, rate)` | Returns the frame containing the tick, including its first tick, and requires whole ticks per frame. Omitting the rate selects the containing whole millisecond. |
+| A frame count and a known grid in ticks per frame | `ticksAtGrid(frames, grid)` | Multiplies the unsigned frame count by the positive ticks-per-frame count and returns the exact tick count as a decimal string. |
 
 Pass counts as decimal strings and choose the clock the value belongs to (`source`, `reel` or `timeline`). A range is empty when its selected start is at or beyond its selected end.
 
@@ -19,8 +21,8 @@ Pass counts as decimal strings and choose the clock the value belongs to (`sourc
 From a checkout of this repository, download all assets for the chosen tag into a new directory and verify their SHA-256 fingerprints. Keep the tag and the verified fingerprint of each file you use with your application.
 
 ```sh
-gh release download v0.1.0 --dir exact-time-v0.1.0
-(cd exact-time-v0.1.0 && shasum -a 256 -c SHA256SUMS)
+gh release download v0.1.1 --dir exact-time-v0.1.1
+(cd exact-time-v0.1.1 && shasum -a 256 -c SHA256SUMS)
 ```
 
 On Linux, `sha256sum --check SHA256SUMS` also verifies the download. On a subsequent install, compare the downloaded files against your saved fingerprints.
@@ -53,9 +55,21 @@ var frame = ExactTime.exactTime("timeline", "300", film);
 var ms = ExactTime.toPremiereMilliseconds(frame); // "12512"
 ```
 
+## Refusal codes
+
+Read `error.code` in JavaScript and ExtendScript or `exc.code` in Python to distinguish conversion refusals. For example, `fromTicks("source", "1", { num: 25, den: 1 })` raises `NOT_ON_FRAME_BOUNDARY`. The same input to `fromContainingTicks` selects frame zero.
+
+| Code | Meaning |
+| --- | --- |
+| `NOT_ON_FRAME_BOUNDARY` | The requested exact position falls between frame boundaries. |
+| `INVALID_RATE` | The rate or rate specification is invalid, ambiguous or unsupported for the conversion. |
+| `INVALID_TIMECODE` | The label, separator, frame field or explicit drop-frame choice is invalid or missing. |
+| `UNREPRESENTABLE` | The requested representation is unavailable, such as fractional ticks per frame or a millisecond that no frame writes. |
+| `INVALID_INPUT` | Another input requirement failed, such as the clock, count syntax, grid size or frame edge. |
+
 ## Limits
 
-The TypeScript rate validators accept ordinary rate objects with numeric fields. A getter that mutates the object during validation can change the outcome. A refusal throws a plain `RangeError` or `TypeError` with a message and no `issues` array. When migrating from the earlier in-tool module, read the error message and remove dependencies on the schema library’s error shape.
+The TypeScript rate validators accept ordinary rate objects with numeric fields. A getter that mutates the object during validation can change the outcome. A refusal throws a plain `RangeError` or `TypeError` with a message and no `issues` array. When migrating from the earlier in-tool module, use the code to classify refusals and the message for display.
 
 ## Test and build
 
@@ -66,8 +80,8 @@ npm ci
 npm run check
 ```
 
-The suite checks clock types, the independent oracle, and all 99 contract rows against both Node builds, Python and the ES3 file. The ES3 tests use Node’s VM. The table and the two design records explain the conversion rules. [Case table](contracts/time-cases.json) · [Exact frames](docs/adr/0027-exact-rational-frame-times.md) · [Choosing a frame](docs/adr/0028-time-to-frame.md)
+The suite checks clock types, the independent oracle, and all 107 contract rows against both Node builds, Python and the ES3 file. The ES3 tests use Node’s VM. The table and the two design records explain the conversion rules. [Case table](contracts/time-cases.json) · [Exact frames](docs/adr/0027-exact-rational-frame-times.md) · [Choosing a frame](docs/adr/0028-time-to-frame.md)
 
-Run `npm run release` to rebuild the standalone files and their `SHA256SUMS` manifest in `dist/`. A matching version tag such as `v0.1.0` attaches those files to a GitHub release after the test matrix passes.
+Run `npm run release` to rebuild the standalone files and their `SHA256SUMS` manifest in `dist/`. A matching version tag such as `v0.1.1` attaches those files to a GitHub release after the test matrix passes.
 
 Distributed under the [MIT license](LICENSE).
