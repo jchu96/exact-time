@@ -1,0 +1,25 @@
+{
+  "name": "exact-time",
+  "version": "0.1.0",
+  "description": "Exact video frame times across TypeScript, Python and ExtendScript.",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": { "types": "./dist/exact-time.d.mts", "default": "./dist/exact-time.mjs" },
+      "require": { "types": "./dist/exact-time.d.cts", "default": "./dist/exact-time.cjs" }
+    }
+  },
+  "scripts": {
+    "release": "node scripts/release.mjs",
+    "check": "tsc --noEmit && npm run release && vitest run && node test/test_table.mjs && node test/test_table.mjs --cjs && node test/test_table.mjs --es3 && python3 -I test/test_python.py"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "tsup": "8.5.0",
+    "typescript": "5.9.3",
+    "vitest": "5.0.0",
+    "zod": "4.6.6"
+  }
+}
