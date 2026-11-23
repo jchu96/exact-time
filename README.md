@@ -16,13 +16,25 @@ Pass counts as decimal strings and choose the clock the value belongs to (`sourc
 
 **At 24000/1001 fps**, frame 300 starts at 12.5125 seconds. An editor writes it as 12512 whole milliseconds. Reading `"12512"` with `fromPremiereMilliseconds` returns frame 300. Given `"12.512"` as decimal seconds instead, the instant is still in frame 299, and a range starting there begins at frame 300.
 
+## Use as a dependency
+
+Add this line to the `dependencies` object in your application's `package.json`:
+
+```json
+"exact-time": "https://github.com/jchu96/exact-time/releases/download/v0.1.2/exact-time-0.1.2.tgz"
+```
+
+Run `npm install` or `bun install`, then use `import { fromTicks } from "exact-time"` or `require("exact-time")`. The tarball includes both Node builds and their TypeScript declarations. No build or install script is required.
+
+Verify the tarball against its SHA-256 entry in the release's `SHA256SUMS` as shown below. Commit your lockfile so future installs can check the same archive against the package manager's integrity digest. A SHA-512 integrity value and the release's SHA-256 value fingerprint the same bytes with different algorithms.
+
 ## Use a release
 
 From a checkout of this repository, download all assets for the chosen tag into a new directory and verify their SHA-256 fingerprints. Keep the tag and the verified fingerprint of each file you use with your application.
 
 ```sh
-gh release download v0.1.1 --dir exact-time-v0.1.1
-(cd exact-time-v0.1.1 && shasum -a 256 -c SHA256SUMS)
+gh release download v0.1.2 --dir exact-time-v0.1.2
+(cd exact-time-v0.1.2 && shasum -a 256 -c SHA256SUMS)
 ```
 
 On Linux, `sha256sum --check SHA256SUMS` also verifies the download. On a subsequent install, compare the downloaded files against your saved fingerprints.
@@ -82,6 +94,6 @@ npm run check
 
 The suite checks clock types, the independent oracle, and all 107 contract rows against both Node builds, Python and the ES3 file. The ES3 tests use Node’s VM. The table and the two design records explain the conversion rules. [Case table](contracts/time-cases.json) · [Exact frames](docs/adr/0027-exact-rational-frame-times.md) · [Choosing a frame](docs/adr/0028-time-to-frame.md)
 
-Run `npm run release` to rebuild the standalone files and their `SHA256SUMS` manifest in `dist/`. A matching version tag such as `v0.1.1` attaches those files to a GitHub release after the test matrix passes.
+Run `npm run release` to rebuild the standalone files, dependency tarball and their `SHA256SUMS` manifest in `dist/`. A matching version tag such as `v0.1.2` attaches those files to a GitHub release after the test matrix passes.
 
 Distributed under the [MIT license](LICENSE).

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.2
+
+- Node applications can install the prebuilt package with npm or Bun from a versioned GitHub release URL. The release includes the tarball in `SHA256SUMS` alongside the standalone files.
+
 ## 0.1.1
 
 - Python accepts whole-valued float rates on the exact tick path and other rate inputs. Omitting the drop-frame choice in `renderExactTimecode` raises `INVALID_TIMECODE`.
