@@ -46,6 +46,14 @@ def run_entry(c):
                 moved=result['moved'], movement={k: str(v) for k, v in result['movement'].items()})
 
 
+def run_tick(row):
+    if row['op'] == 'ticksAtGrid':
+        return t.ticksAtGrid(row['frames'], row['grid'])
+    assert row['op'] == 'fromContainingTicks'
+    time = t.fromContainingTicks(row['clock'], row['ticks'], row.get('rate'))
+    return dict(time, frames=str(time['frames']))
+
+
 def run_table(override=None):
     canonical = CONTRACT.read_bytes()
     if override and Path(override).read_bytes() != canonical:
@@ -77,7 +85,17 @@ def run_table(override=None):
             assert got == c.get('expected'), f"MISS {c['id']}: {got}"
         entry_count += 1
     assert (legacy_count, entry_count) == (66, 33), 'MISS T8: entry rows not run'
-    print(f'PYTHON TABLE OK: {legacy_count + entry_count} cases and available inverses (66 legacy + 33 entry)')
+    tick_count = 0
+    for row in table['tickCases']:
+        try:
+            got = run_tick(row)
+        except ValueError as error:
+            assert error.code == row['refused'], row['id']
+        else:
+            assert got == row['expected'], row['id']
+        tick_count += 1
+    assert tick_count == 8, 'tick rows run'
+    print(f'PYTHON TABLE OK: {legacy_count + entry_count + tick_count} cases and available inverses (66 legacy + 33 entry + {tick_count} tick)')
 
 
 def main():

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1
+
+- Added `ticksAtGrid` and `fromContainingTicks` to the Node builds and Python, matching the existing ExtendScript functions.
+- Conversion refusals carry a stable `code` across all three forms. Existing messages and exception types are preserved.
+- Added eight tick cases to the shared contract and release-file tests for public names and refusal codes.
+
 ## 0.1.0
 
 - Initial standalone release of exact frame-time conversions for TypeScript, Python and ExtendScript.

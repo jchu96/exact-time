@@ -1,15 +1,19 @@
+import { fail, type RefusalCode } from "./refusal.js";
 import { rationalRate, isDropRate, type FrameRate } from "./time-rate.js";
 import type { MediaClock } from "./media-clock.js";
 
 export const TICKS_PER_SECOND = 254016000000n;
 const FORMS = "Accepted forms: unsigned whole frames, ticks or milliseconds; HH:MM:SS:FF (non-drop) or HH:MM:SS;FF (drop), at a declared rate.";
-function refuse(reason: string): never { throw new Error(`${reason} ${FORMS}`); }
+function refuse(code: RefusalCode, reason: string): never { return fail(code, new Error(`${reason} ${FORMS}`)); }
 function natural(value: string): bigint {
-  if (value.trim() !== value || !/^(0|[1-9]\d*)$/.test(value)) refuse("Expected a non-negative unpadded whole number.");
+  let trimmed: string;
+  try { trimmed = value.trim(); }
+  catch (error) { return fail("INVALID_INPUT", error as Error); }
+  if (trimmed !== value || !/^(0|[1-9]\d*)$/.test(value)) refuse("INVALID_INPUT", "Expected a non-negative unpadded whole number.");
   return BigInt(value);
 }
 function namedClock(clock: MediaClock): void {
-  if (!["source", "reel", "timeline"].includes(clock)) refuse("Expected a source, reel or timeline clock; time of day is not a cut point.");
+  if (!["source", "reel", "timeline"].includes(clock)) refuse("INVALID_INPUT", "Expected a source, reel or timeline clock; time of day is not a cut point.");
 }
 declare const exactBrand: unique symbol;
 export type ExactTime<C extends MediaClock = MediaClock> = Readonly<{
@@ -26,7 +30,7 @@ export type ExactRange<C extends MediaClock = MediaClock> = { start: ExactTime<C
 
 function normalizedRate(rate: FrameRate): FrameRate {
   try { return rationalRate(rate.num, rate.den); }
-  catch { return refuse("Rate must contain positive safe whole numbers."); }
+  catch { return refuse("INVALID_RATE", "Rate must contain positive safe whole numbers."); }
 }
 function makeTime<C extends MediaClock>(clock: C, frames: bigint, rate: FrameRate, unit: ExactTime["unit"]): ExactTime<C> {
   namedClock(clock);
@@ -43,9 +47,9 @@ export function fromMilliseconds<C extends MediaClock>(clock: C, ms: string, rat
   return makeTime(clock, value * BigInt(reduced.num) / (1000n * BigInt(reduced.den)), reduced, "video-frame");
 }
 function nominalRate(time: ExactTime, dropFrame: boolean): bigint {
-  if (time.unit !== "video-frame") refuse("Timecode requires a declared video rate.");
-  if (typeof dropFrame !== "boolean") refuse("Drop-frame must be stated.");
-  if (dropFrame && !isDropRate(time.rate)) refuse("Drop-frame requires 30000/1001 or 60000/1001.");
+  if (time.unit !== "video-frame") refuse("INVALID_INPUT", "Timecode requires a declared video rate.");
+  if (typeof dropFrame !== "boolean") refuse("INVALID_TIMECODE", "Drop-frame must be stated.");
+  if (dropFrame && !isDropRate(time.rate)) refuse("INVALID_RATE", "Drop-frame requires 30000/1001 or 60000/1001.");
   return (BigInt(time.rate.num) + BigInt(time.rate.den) - 1n) / BigInt(time.rate.den);
 }
 export function renderExactTimecode(time: ExactTime, dropFrame: boolean): string {
@@ -66,12 +70,12 @@ export function fromTimecode<C extends MediaClock>(clock: C, value: string, rate
   const zero = exactTime(clock, "0", rate);
   const nominal = nominalRate(zero, dropFrame);
   const match = /^(\d{2}|[1-9]\d{2,}):([0-5]\d):([0-5]\d)([:;])(\d{2}|[1-9]\d{2,})$/.exec(value);
-  if (!match || match[0] !== value) refuse("Malformed timecode.");
-  if (match[4] !== (dropFrame ? ";" : ":")) refuse("Timecode separator must match the stated drop-frame choice.");
+  if (!match || match[0] !== value) refuse("INVALID_TIMECODE", "Malformed timecode.");
+  if (match[4] !== (dropFrame ? ";" : ":")) refuse("INVALID_TIMECODE", "Timecode separator must match the stated drop-frame choice.");
   const [hours, minutes, seconds, frames] = [match[1]!, match[2]!, match[3]!, match[5]!].map(BigInt) as [bigint, bigint, bigint, bigint];
-  if (frames >= nominal) refuse("Frame field must be below the nominal rate.");
+  if (frames >= nominal) refuse("INVALID_TIMECODE", "Frame field must be below the nominal rate.");
   const drop = dropFrame ? (nominal === 60n ? 4n : 2n) : 0n;
-  if (dropFrame && minutes % 10n !== 0n && seconds === 0n && frames < drop) refuse("Drop-frame label does not exist.");
+  if (dropFrame && minutes % 10n !== 0n && seconds === 0n && frames < drop) refuse("INVALID_TIMECODE", "Drop-frame label does not exist.");
   const totalMinutes = hours * 60n + minutes;
   return exactTime(clock, String(((totalMinutes * 60n + seconds) * nominal + frames) - drop * (totalMinutes - totalMinutes / 10n)), rate);
 }
@@ -79,13 +83,25 @@ function ticksPerFrame(time: ExactTime): bigint | undefined {
   const numerator = TICKS_PER_SECOND * BigInt(time.rate.den);
   return numerator % BigInt(time.rate.num) === 0n ? numerator / BigInt(time.rate.num) : undefined;
 }
-export function fromTicks<C extends MediaClock>(clock: C, ticks: string, rate?: FrameRate): ExactTime<C> {
+export function ticksAtGrid(frames: string, grid: string): string {
+  const step = natural(grid);
+  if (step === 0n) refuse("INVALID_INPUT", "Ticks per frame must be positive.");
+  return String(natural(frames) * step);
+}
+function timeAtTicks<C extends MediaClock>(clock: C, ticks: string, rate: FrameRate | undefined, exact: boolean): ExactTime<C> {
   const value = natural(ticks);
   const zero = rate ? exactTime(clock, "0", rate) : fromMilliseconds(clock, "0");
   const step = ticksPerFrame(zero);
-  if (step === undefined) refuse("Ticks per frame are not whole at this rate.");
-  if (value % step !== 0n) refuse("Ticks must identify an exact frame boundary.");
-  return rate ? exactTime(clock, String(value / step), rate) : fromMilliseconds(clock, String(value / step));
+  if (step === undefined) refuse("UNREPRESENTABLE", "Ticks per frame are not whole at this rate.");
+  if (exact && value % step !== 0n) refuse("NOT_ON_FRAME_BOUNDARY", "Ticks must identify an exact frame boundary.");
+  const frames = String(value / step);
+  return rate ? exactTime(clock, frames, rate) : fromMilliseconds(clock, frames);
+}
+export function fromTicks<C extends MediaClock>(clock: C, ticks: string, rate?: FrameRate): ExactTime<C> {
+  return timeAtTicks(clock, ticks, rate, true);
+}
+export function fromContainingTicks<C extends MediaClock>(clock: C, ticks: string, rate?: FrameRate): ExactTime<C> {
+  return timeAtTicks(clock, ticks, rate, false);
 }
 /** Derived reading form only. Reconstruct exact time from frames/rate, never this display. */
 function derivedSeconds(time: ExactTime): { seconds: string; secondsDerived: true; secondsUnavailable?: never } | { seconds?: never; secondsDerived: true; secondsUnavailable: string } {
@@ -97,7 +113,7 @@ function derivedSeconds(time: ExactTime): { seconds: string; secondsDerived: tru
 /** Requesting the unavailable seconds form refuses; the other exact forms remain available. */
 export function exactSeconds(time: ExactTime): string {
   const result = derivedSeconds(time);
-  if (result.seconds === undefined) refuse(result.secondsUnavailable);
+  if (result.seconds === undefined) refuse("UNREPRESENTABLE", result.secondsUnavailable);
   return result.seconds;
 }
 export function deriveExact(time: ExactTime, dropFrame?: boolean) {
@@ -109,17 +125,17 @@ export function deriveExact(time: ExactTime, dropFrame?: boolean) {
 }
 /** Exact offsets share a rate; no implicit resampling or snapping. */
 export function offsetTime<C extends MediaClock>(time: ExactTime, offset: ExactTime<C>): ExactTime<C> {
-  if (time.rate.num !== offset.rate.num || time.rate.den !== offset.rate.den || time.unit !== offset.unit) refuse("Exact offsets require the same rate and unit.");
+  if (time.rate.num !== offset.rate.num || time.rate.den !== offset.rate.den || time.unit !== offset.unit) refuse("INVALID_INPUT", "Exact offsets require the same rate and unit.");
   const frames = String(time.frames + offset.frames);
   return offset.unit === "millisecond" ? fromMilliseconds(offset.clock, frames) : exactTime(offset.clock, frames, offset.rate);
 }
 /** Pure OTIO export. The floating rate is the only lossy field; unsafe values are refused. */
 export function toOtioTime(time: ExactTime) {
-  if (time.frames > BigInt(Number.MAX_SAFE_INTEGER)) refuse("OTIO value exceeds the safe whole-frame range.");
+  if (time.frames > BigInt(Number.MAX_SAFE_INTEGER)) refuse("UNREPRESENTABLE", "OTIO value exceeds the safe whole-frame range.");
   return { OTIO_SCHEMA: "RationalTime.1" as const, value: Number(time.frames), rate: time.rate.num / time.rate.den };
 }
 export function toOtioRange(range: ExactRange) {
-  if (range.start.clock !== range.duration.clock) refuse("A range start and duration must name the same clock.");
+  if (range.start.clock !== range.duration.clock) refuse("INVALID_INPUT", "A range start and duration must name the same clock.");
   return { OTIO_SCHEMA: "TimeRange.1" as const, start_time: toOtioTime(range.start), duration: toOtioTime(range.duration) };
 }
 
@@ -132,17 +148,17 @@ export function exactMilliseconds(time: ExactTime): string | undefined {
 /** Declared seconds offsets must be frame boundaries, unlike instant containment. */
 export function fromBoundaryMilliseconds<C extends MediaClock>(clock: C, ms: string, rate: FrameRate): ExactTime<C> {
   const time = fromMilliseconds(clock, ms, rate);
-  if (exactMilliseconds(time) !== ms) refuse(`Seconds offset is between frames ${time.frames}f and ${time.frames + 1n}f at ${time.rate.num}/${time.rate.den}; use a frame count or timecode.`);
+  if (exactMilliseconds(time) !== ms) refuse("NOT_ON_FRAME_BOUNDARY", `Seconds offset is between frames ${time.frames}f and ${time.frames + 1n}f at ${time.rate.num}/${time.rate.den}; use a frame count or timecode.`);
   return time;
 }
 function decimalMs(value: string): bigint {
-  if (!/^(0|[1-9]\d*)\.\d{3}$/.test(value) || value.trim() !== value) refuse("Approximate seconds must have three decimals.");
+  if (!/^(0|[1-9]\d*)\.\d{3}$/.test(value) || value.trim() !== value) refuse("INVALID_INPUT", "Approximate seconds must have three decimals.");
   return BigInt(value.replace(".", ""));
 }
 function readingSeconds(ms: bigint): string { return `${ms / 1000n}.${String(ms % 1000n).padStart(3, "0")}`; }
 export function modelTime<C extends MediaClock>(clock: C, timestamp: string): ApproximateTime<C> {
   namedClock(clock);
-  if (!/^\d{2,}:[0-5]\d:[0-5]\d$/.test(timestamp) || timestamp.trim() !== timestamp) refuse("Model time must be HH:MM:SS.");
+  if (!/^\d{2,}:[0-5]\d:[0-5]\d$/.test(timestamp) || timestamp.trim() !== timestamp) refuse("INVALID_INPUT", "Model time must be HH:MM:SS.");
   const [hours, minutes, seconds] = timestamp.split(":").map(BigInt) as [bigint, bigint, bigint];
   return { clock, seconds: readingSeconds((hours * 3600n + minutes * 60n + seconds) * 1000n), precisionMs: 1000, origin: "model" };
 }
@@ -181,10 +197,10 @@ export function snapDecimalSeconds<C extends MediaClock>(
   clock: C, seconds: string, rate: FrameRate, edge: FrameEdge,
 ): DecimalFrameTime<C> {
   if (edge !== "start" && edge !== "end" && edge !== "instant") {
-    throw new Error("A frame edge is required. Accepted forms: start, end or instant.");
+    fail("INVALID_INPUT", new Error("A frame edge is required. Accepted forms: start, end or instant."));
   }
   if (typeof seconds !== "string" || !/^(0|[1-9]\d*)(?:\.\d+)?$/.test(seconds) || seconds.trim() !== seconds) {
-    throw new Error("Expected decimal seconds as text. Accepted forms: an unsigned unpadded whole number with an optional fraction, such as 0 or 5.010.");
+    fail("INVALID_INPUT", new Error("Expected decimal seconds as text. Accepted forms: an unsigned unpadded whole number with an optional fraction, such as 0 or 5.010."));
   }
   const reduced = normalizedRate(rate);
   const digits = BigInt(seconds.replace(".", ""));
@@ -203,14 +219,14 @@ export function snapDecimalSeconds<C extends MediaClock>(
 function premiereFrameScale(rate: FrameRate): bigint {
   const scale = 1000n * BigInt(rate.den);
   if (BigInt(rate.num) > scale) {
-    refuse("Above 1000 fps two frames can share one whole millisecond. Use a declared video rate of at most 1000 fps.");
+    refuse("INVALID_RATE", "Above 1000 fps two frames can share one whole millisecond. Use a declared video rate of at most 1000 fps.");
   }
   return scale;
 }
 
 /** Invert the whole millisecond written by flooring a video frame's start. */
 export function fromPremiereMilliseconds<C extends MediaClock>(clock: C, ms: string, rate: FrameRate): ExactTime<C> {
-  if (typeof ms !== "string") refuse("Expected whole milliseconds as text.");
+  if (typeof ms !== "string") refuse("INVALID_INPUT", "Expected whole milliseconds as text.");
   const value = natural(ms);
   const reduced = normalizedRate(rate);
   const scale = premiereFrameScale(reduced);
@@ -218,13 +234,13 @@ export function fromPremiereMilliseconds<C extends MediaClock>(clock: C, ms: str
   // The first frame starting at or after ms is the only possible match in [ms, ms + 1).
   const frame = ceilQuotient(value * num, scale);
   if (frame * scale >= (value + 1n) * num) {
-    refuse(`No frame writes ${ms} ms. It falls between the values written by frames ${frame - 1n} and ${frame}.`);
+    refuse("UNREPRESENTABLE", `No frame writes ${ms} ms. It falls between the values written by frames ${frame - 1n} and ${frame}.`);
   }
   return makeTime(clock, frame, reduced, "video-frame");
 }
 
 export function toPremiereMilliseconds(time: ExactTime): string {
-  if (time?.unit !== "video-frame") refuse("Premiere milliseconds require an exact video frame at a declared video rate.");
+  if (time?.unit !== "video-frame") refuse("INVALID_INPUT", "Premiere milliseconds require an exact video frame at a declared video rate.");
   const scale = premiereFrameScale(time.rate);
   return String(time.frames * scale / BigInt(time.rate.num));
 }
