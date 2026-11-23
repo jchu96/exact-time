@@ -29,6 +29,10 @@ def video_frame(frames, rate):
 PROBES = [
     ('fromMilliseconds', ['source', '1\u0661', {'num': 25, 'den': 1}], 'Expected a non-negative unpadded whole number.'),
     ('fromMilliseconds', ['source', LONG_MS], LONG_MS),
+    ('exactTime', ['source', '1', AT25], '1'),
+    ('fromMilliseconds', ['source', '40', AT25], '1'),
+    ('fromTicks', ['reel', '10160640000', AT25], '1'),
+    ('fromTimecode', ['source', '00:00:00:01', AT25, False], '1'),
     (SNAP, ['source', '1.04', AT25, 'instant'], '26'),
     (READ, ['source', '40', AT25], '1'),
     (WRITE, [video_frame('1', AT25)], '40'),
@@ -86,8 +90,16 @@ class EntryParity(unittest.TestCase):
                     self.assertTrue(module['refused'].startswith(expected), module)
 
     def test_python_rate_boundaries(self):
-        with self.assertRaisesRegex(ValueError, 'Rate must contain positive safe whole numbers'):
-            time.exactTime('source', '1', AT25)
+        self.assertEqual(time.rationalRate(50.0, 2.0), {'num': 25, 'den': 1})
+        self.assertEqual(time.rate(AT25), {'num': 25, 'den': 1})
+        self.assertTrue(time.isDropRate({'num': 30000.0, 'den': 1001.0}))
+        frame = video_frame(1, AT25)
+        self.assertEqual(time.deriveExact(frame, False), time.deriveExact(time.exactTime('source', '1', AT25), False))
+        for args in [(frame,), (frame, None)]:
+            with self.assertRaises(ValueError) as result:
+                time.renderExactTimecode(*args)
+            self.assertEqual(result.exception.code, 'INVALID_TIMECODE')
+            self.assertEqual(str(result.exception), 'Drop-frame must be stated.')
         for rate in [FRACTIONAL, {'num': True, 'den': 1}, {'num': 25, 'den': 0.0}]:
             with self.subTest(rate=rate), self.assertRaisesRegex(ValueError, 'Rate must contain positive safe whole numbers'):
                 time.toPremiereMilliseconds(video_frame(1, rate))

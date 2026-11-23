@@ -39,7 +39,17 @@ def natural(value):
     return int(Decimal(value))
 
 
+def _rate_component(value):
+    # JSON numbers such as 25.0 denote whole components; keep frame arithmetic integral.
+    return int(value) if isinstance(value, float) and value.is_integer() else value
+
+
+def _rate_components(rate):
+    return _rate_component(rate['num']), _rate_component(rate['den'])
+
+
 def rationalRate(num, den):
+    num, den = _rate_component(num), _rate_component(den)
     if any(isinstance(v, bool) or not isinstance(v, int) or not 0 < v <= 9007199254740991 for v in (num, den)):
         raise _refusal('INVALID_RATE', 'Rate must contain positive safe whole numbers.')
     f = Fraction(num, den)
@@ -48,7 +58,7 @@ def rationalRate(num, den):
 
 @_classify('INVALID_RATE')
 def isDropRate(rate):
-    return Fraction(rate['num'], rate['den']) in (Fraction(30000, 1001), Fraction(60000, 1001))
+    return Fraction(*_rate_components(rate)) in (Fraction(30000, 1001), Fraction(60000, 1001))
 
 
 @_classify('INVALID_RATE')
@@ -104,12 +114,8 @@ def _entry_refused(code, reason):
 
 
 def _entry_rate(rate):
-    # JSON has a single number type. Keep whole-valued rates in integer arithmetic.
-    def component(value):
-        return int(value) if isinstance(value, float) and value.is_integer() else value
-
     try:
-        return rationalRate(component(rate['num']), component(rate['den']))
+        return _normalized_rate(rate)
     except (TypeError, KeyError, ValueError):
         _entry_refused('INVALID_RATE', 'Rate must contain positive safe whole numbers.')
 
@@ -172,11 +178,11 @@ def nominalRate(time, dropFrame):
         raise _refusal('INVALID_TIMECODE', 'Drop-frame must be stated.')
     if dropFrame and not isDropRate(time['rate']):
         raise _refusal('INVALID_RATE', 'Drop-frame requires 30000/1001 or 60000/1001.')
-    r = time['rate']
-    return (r['num'] + r['den'] - 1) // r['den']
+    num, den = _rate_components(time['rate'])
+    return (num + den - 1) // den
 
 
-def renderExactTimecode(time, dropFrame):
+def renderExactTimecode(time, dropFrame=None):
     nominal = nominalRate(time, dropFrame)
     frame = time['frames']
     if dropFrame:
@@ -209,7 +215,8 @@ def fromTimecode(clock, value, rate, dropFrame):
 
 
 def ticksPerFrame(time):
-    value, remainder = divmod(TICKS_PER_SECOND * time['rate']['den'], time['rate']['num'])
+    num, den = _rate_components(time['rate'])
+    value, remainder = divmod(TICKS_PER_SECOND * den, num)
     return None if remainder else value
 
 
@@ -222,7 +229,7 @@ def ticksAtGrid(frames, grid):
 
 def _time_at_ticks(clock, ticks, rate, exact):
     value = natural(ticks)
-    # The containing reader accepts whole-valued JSON rates, as ES3 does.
+    # The containing reader includes entry guidance in its invalid-rate message.
     if not exact and rate is not None:
         rate = _entry_rate(rate)
     zero = exactTime(clock, '0', rate) if rate else fromMilliseconds(clock, '0')
@@ -244,9 +251,10 @@ def fromContainingTicks(clock, ticks, rate=None):
 
 def deriveExact(time, dropFrame=None):
     f, r = time['frames'], time['rate']
-    ms = (f * 1000 * r['den'] + r['num'] - 1) // r['num']
+    num, den = _rate_components(r)
+    ms = (f * 1000 * den + num - 1) // num
     out = {'clock': time['clock'], 'secondsDerived': True}
-    if ms * r['num'] >= (f + 1) * 1000 * r['den']:
+    if ms * num >= (f + 1) * 1000 * den:
         out['secondsUnavailable'] = 'No whole millisecond falls inside this frame; three-decimal derived seconds are unavailable.'
     else:
         out['seconds'] = f'{ms // 1000}.{ms % 1000:03}'

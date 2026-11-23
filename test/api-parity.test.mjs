@@ -11,8 +11,13 @@ const dist = fileURLToPath(new URL('../dist/', import.meta.url));
 const cjs = createRequire(import.meta.url)('../dist/exact-time.cjs');
 const panel = vm.runInNewContext(readFileSync(dist + 'exact-time.jsx', 'utf8') + '\nExactTime');
 const rate = { num: 25, den: 1 };
-const probes = [
+// Keep the decimal spelling on the wire so Python actually receives floats.
+const wholeRate = { num: JSON.rawJSON('25.0'), den: JSON.rawJSON('1.0') };
+const wire = JSON.stringify([
   ['fromTicks', ['source', '1', rate], 'NOT_ON_FRAME_BOUNDARY'],
+  ['fromTicks', ['reel', '10160640001', wholeRate], 'NOT_ON_FRAME_BOUNDARY'],
+  ['fromTicks', ['reel', '10160640000', { num: 25.5, den: 1 }], 'INVALID_RATE'],
+  ['renderExactTimecode', [['source', '1', rate]], 'INVALID_TIMECODE'],
   ['fromContainingTicks', ['reel', '0', { num: 11, den: 1 }], 'UNREPRESENTABLE'],
   ['exactTime', ['reel', '01', rate], 'INVALID_INPUT'],
   ['ticksAtGrid', ['1', '0'], 'INVALID_INPUT'],
@@ -27,7 +32,8 @@ const probes = [
   ['parseTimecodeRate', [null], 'INVALID_RATE'],
   ['fromTimecode', ['source', null, rate, false], 'INVALID_TIMECODE'],
   ['fromTimecode', ['source', '00:00:00:25', rate, false], 'INVALID_TIMECODE'],
-];
+]);
+const probes = JSON.parse(wire);
 
 const python = JSON.parse(execFileSync('python3', ['-IB', '-c', `
 import json, sys
@@ -36,13 +42,15 @@ import exact_time
 codes = []
 for name, args, expected in json.load(sys.stdin):
     try:
+        if name == 'renderExactTimecode':
+            args = [exact_time.exactTime(*args[0])]
         getattr(exact_time, name)(*args)
     except Exception as error:
         codes.append(getattr(error, 'code', None))
     else:
         codes.append('accepted')
 print(json.dumps(dict(names=[n for n in dir(exact_time) if not n.startswith('_')], codes=codes)))
-`, dist], { input: JSON.stringify(probes), encoding: 'utf8' }));
+`, dist], { input: wire, encoding: 'utf8' }));
 
 // Existing Node-only serializers, approximate-time helpers and validators.
 const nodeOnly = [
@@ -81,11 +89,12 @@ test('release exports match across CommonJS, ES modules, ES3 and Python', () => 
   }
 });
 
-test('refusal codes match across CommonJS, ES modules, ES3 and Python', () => {
-  for (const [i, [name, args, expected]] of probes.entries()) {
+test.each(probes.map(([name, args, expected], i) => [name, args, expected, python.codes[i]]))(
+  'refusal codes match for %s(%j) → %s', (name, args, expected, pythonCode) => {
     for (const [form, api] of [['CommonJS', cjs], ['ES module', esm], ['ES3', panel]]) {
-      expect(() => api[name](...args), form + ' ' + name).toThrow(expect.objectContaining({ code: expected }));
+      const callArgs = name === 'renderExactTimecode' ? [api.exactTime(...args[0])] : args;
+      expect(() => api[name](...callArgs), form + ' ' + name).toThrow(expect.objectContaining({ code: expected }));
     }
-    expect(python.codes[i], 'Python ' + name).toBe(expected);
-  }
-});
+    expect(pythonCode, 'Python ' + name).toBe(expected);
+  },
+);
