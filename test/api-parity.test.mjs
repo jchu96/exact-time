@@ -12,6 +12,7 @@ const cjs = createRequire(import.meta.url)('../dist/exact-time.cjs');
 const panelScript = readFileSync(dist + 'exact-time.jsx', 'utf8') + '\nExactTime';
 const panel = vm.runInNewContext(panelScript);
 const rate = { num: 25, den: 1 };
+const clockRefusal = 'Expected a source, reel or timeline clock; time of day is not a cut point.';
 // Keep the decimal spelling on the wire so Python actually receives floats.
 const wholeRate = { num: JSON.rawJSON('25.0'), den: JSON.rawJSON('1.0') };
 const wire = JSON.stringify([
@@ -43,7 +44,7 @@ const python = JSON.parse(execFileSync('python3', ['-IB', '-c', `
 import json, sys
 sys.path.insert(0, sys.argv[1])
 import exact_time
-codes = []
+refusals = []
 for name, args, expected in json.load(sys.stdin):
     try:
         if name == 'renderExactTimecode':
@@ -53,9 +54,9 @@ for name, args, expected in json.load(sys.stdin):
         else:
             getattr(exact_time, name)(*args)
     except Exception as error:
-        codes.append(getattr(error, 'code', None))
+        refusals.append(dict(code=getattr(error, 'code', None), message=str(error)))
     else:
-        codes.append('accepted')
+        refusals.append(None)
 clocks = exact_time.MEDIA_CLOCKS
 assert isinstance(clocks, tuple)
 for clock in clocks:
@@ -71,7 +72,7 @@ for parse in (exact_time.mediaClockSchema.parse, lambda c: exact_time.exactTime(
         assert str(error) == 'Expected a source, reel or timeline clock; time of day is not a cut point.'
     else:
         raise AssertionError('reel was accepted after removal from MEDIA_CLOCKS')
-print(json.dumps(dict(names=[n for n in dir(exact_time) if not n.startswith('_')], codes=codes, clocks=clocks)))
+print(json.dumps(dict(names=[n for n in dir(exact_time) if not n.startswith('_')], refusals=refusals, clocks=clocks)))
 `, dist], { input: wire, encoding: 'utf8' }));
 
 // Existing Node-only serializers, approximate-time helpers and validators.
@@ -113,7 +114,6 @@ test('release exports match across CommonJS, ES modules, ES3 and Python', () => 
 
 test('release clock lists and their validators agree', () => {
   expect(python.clocks).toEqual(['source', 'reel', 'timeline']);
-  const reason = 'Expected a source, reel or timeline clock; time of day is not a cut point.';
   const forms = 'Accepted forms: unsigned whole frames, ticks or milliseconds; HH:MM:SS:FF (non-drop) or HH:MM:SS;FF (drop), at a declared rate.';
   for (const [form, api] of [['CommonJS', cjs], ['ES module', esm], ['ES3', panel]]) {
     expect(Array.from(api.MEDIA_CLOCKS), form + ' MEDIA_CLOCKS').toEqual(python.clocks);
@@ -122,10 +122,10 @@ test('release clock lists and their validators agree', () => {
       expect(api.mediaClockSchema.parse(clock)).toBe(clock);
       expect(api.exactTime(clock, '0', rate).clock).toBe(clock);
     }
-    const message = form === 'ES3' ? reason : reason + ' ' + forms;
-    for (const call of [() => api.mediaClockSchema.parse('day'), () => api.exactTime('day', '0', rate)]) {
-      expect(call).toThrow(expect.objectContaining({ name: 'Error', code: 'INVALID_INPUT', message }));
-    }
+    const message = form === 'ES3' ? clockRefusal : clockRefusal + ' ' + forms;
+    expect(() => api.exactTime('day', '0', rate)).toThrow(expect.objectContaining({
+      name: 'Error', code: 'INVALID_INPUT', message,
+    }));
   }
 });
 
@@ -133,17 +133,21 @@ test('ES3 callers cannot change clock validation by editing their snapshot', () 
   const legacy = vm.runInNewContext('Object.freeze = undefined;\n' + panelScript);
   expect(Array.from(legacy.MEDIA_CLOCKS)).toEqual(python.clocks);
   legacy.MEDIA_CLOCKS[1] = 'day';
+  expect(legacy.MEDIA_CLOCKS[1]).toBe('day');
   expect(legacy.mediaClockSchema.parse('reel')).toBe('reel');
+  expect(legacy.exactTime('reel', '0', rate).clock).toBe('reel');
+  expect(() => legacy.mediaClockSchema.parse('day')).toThrow(expect.objectContaining({ code: 'INVALID_INPUT' }));
   expect(() => legacy.exactTime('day', '0', rate)).toThrow(expect.objectContaining({ code: 'INVALID_INPUT' }));
 });
 
-test.each(probes.map(([name, args, expected], i) => [name, args, expected, python.codes[i]]))(
-  'refusal codes match for %s(%j) → %s', (name, args, expected, pythonCode) => {
+test.each(probes.map(([name, args, expected], i) => [name, args, expected, python.refusals[i]]))(
+  'refusals match for %s(%j) → %s', (name, args, expected, pythonRefusal) => {
+    const refusal = name === 'mediaClockSchema.parse' ? { code: expected, message: clockRefusal } : { code: expected };
     for (const [form, api] of [['CommonJS', cjs], ['ES module', esm], ['ES3', panel]]) {
       const callArgs = name === 'renderExactTimecode' ? [api.exactTime(...args[0])] : args;
       const parse = name === 'mediaClockSchema.parse' ? api.mediaClockSchema.parse : api[name];
-      expect(() => parse(...callArgs), form + ' ' + name).toThrow(expect.objectContaining({ code: expected }));
+      expect(() => parse(...callArgs), form + ' ' + name).toThrow(expect.objectContaining(refusal));
     }
-    expect(pythonCode, 'Python ' + name).toBe(expected);
+    expect(pythonRefusal, 'Python ' + name).toMatchObject(refusal);
   },
 );

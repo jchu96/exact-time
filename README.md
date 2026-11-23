@@ -69,7 +69,7 @@ var ms = ExactTime.toPremiereMilliseconds(frame); // "12512"
 
 ## Validators
 
-Use `MEDIA_CLOCKS` to enumerate the accepted names in order and `mediaClockSchema.parse(value)` to check a stored clock. It returns the clock name or raises the same `INVALID_INPUT` error as a conversion. Node callers can also use `rateSchema` and `timecodeSpecSchema` to validate a rate or timecode specification.
+Use `MEDIA_CLOCKS` to enumerate the accepted names in order and `mediaClockSchema.parse(value)` to check a stored clock. It returns the clock name or raises `INVALID_INPUT` with the same message in Node, Python and ExtendScript. Node callers can also use `rateSchema` and `timecodeSpecSchema` to validate a rate or timecode specification.
 
 Node exposes a frozen array and Python exposes a tuple. ExtendScript hosts without `Object.freeze` receive an array snapshot. Editing that snapshot has no effect on validation.
 

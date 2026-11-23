@@ -261,8 +261,9 @@ var ExactTime = (function () {
             fail('INVALID_INPUT', 'Exact offsets require the same rate and unit.');
         return makeTime(offset.clock, add(time.frames, offset.frames), offset.rate, offset.unit);
     }
-    // ES3 hosts without freeze receive a snapshot so callers cannot alter validation.
-    var publicClocks = typeof Object.freeze === 'function' ? Object.freeze(mediaClocks) : mediaClocks.slice(0);
+    // Validation uses the private list even on hosts that cannot freeze the public copy.
+    var publicClocks = mediaClocks.slice(0);
+    if (typeof Object.freeze === 'function') Object.freeze(publicClocks);
     return {MEDIA_CLOCKS:publicClocks, mediaClockSchema:{parse:parseMediaClock},
         TICKS_PER_SECOND:TPS, ticksAtGrid:ticksAtGrid, rationalRate:rationalRate, isDropRate:isDropRate,
         parseTimecodeRate:parseTimecodeRate, exactTime:exactTime, fromMilliseconds:fromMilliseconds,
