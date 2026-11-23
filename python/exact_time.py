@@ -10,6 +10,7 @@ import math
 import re
 
 TICKS_PER_SECOND = 254016000000
+MEDIA_CLOCKS = ('source', 'reel', 'timeline')
 
 
 def _refusal(code, message):
@@ -86,9 +87,19 @@ def parseTimecodeRate(value):
     return {'rate': rate, 'dropFrame': choice == 'df', 'rateOrigin': 'declared'}
 
 
+class _MediaClockSchema:
+    @staticmethod
+    def parse(value):
+        if value not in MEDIA_CLOCKS:
+            raise _refusal('INVALID_INPUT', 'Expected a source, reel or timeline clock; time of day is not a cut point.')
+        return value
+
+
+mediaClockSchema = _MediaClockSchema()
+
+
 def makeTime(clock, frames, rate, unit):
-    if clock not in ('source', 'reel', 'timeline'):
-        raise _refusal('INVALID_INPUT', 'Expected a source, reel or timeline clock; time of day is not a cut point.')
+    mediaClockSchema.parse(clock)
     return {'clock': clock, 'frames': frames, 'rate': rate, 'unit': unit}
 
 

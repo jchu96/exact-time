@@ -1,6 +1,6 @@
 import { fail, type RefusalCode } from "./refusal.js";
 import { rationalRate, isDropRate, type FrameRate } from "./time-rate.js";
-import type { MediaClock } from "./media-clock.js";
+import { MEDIA_CLOCKS, type MediaClock } from "./media-clock.js";
 
 export const TICKS_PER_SECOND = 254016000000n;
 const FORMS = "Accepted forms: unsigned whole frames, ticks or milliseconds; HH:MM:SS:FF (non-drop) or HH:MM:SS;FF (drop), at a declared rate.";
@@ -12,9 +12,13 @@ function natural(value: string): bigint {
   if (trimmed !== value || !/^(0|[1-9]\d*)$/.test(value)) refuse("INVALID_INPUT", "Expected a non-negative unpadded whole number.");
   return BigInt(value);
 }
-function namedClock(clock: MediaClock): void {
-  if (!["source", "reel", "timeline"].includes(clock)) refuse("INVALID_INPUT", "Expected a source, reel or timeline clock; time of day is not a cut point.");
+function parseMediaClock(value: unknown): MediaClock {
+  const clock = MEDIA_CLOCKS.find(name => name === value);
+  if (clock === undefined) refuse("INVALID_INPUT", "Expected a source, reel or timeline clock; time of day is not a cut point.");
+  return clock;
 }
+export const mediaClockSchema = { parse: parseMediaClock };
+
 declare const exactBrand: unique symbol;
 export type ExactTime<C extends MediaClock = MediaClock> = Readonly<{
   clock: C; frames: bigint; rate: Readonly<FrameRate>; unit: "video-frame" | "millisecond";
@@ -33,7 +37,7 @@ function normalizedRate(rate: FrameRate): FrameRate {
   catch { return refuse("INVALID_RATE", "Rate must contain positive safe whole numbers."); }
 }
 function makeTime<C extends MediaClock>(clock: C, frames: bigint, rate: FrameRate, unit: ExactTime["unit"]): ExactTime<C> {
-  namedClock(clock);
+  parseMediaClock(clock);
   return Object.freeze({ clock, frames, rate: Object.freeze(rate), unit }) as ExactTime<C>;
 }
 export function exactTime<C extends MediaClock>(clock: C, frames: string, rate: FrameRate): ExactTime<C> {
@@ -157,7 +161,7 @@ function decimalMs(value: string): bigint {
 }
 function readingSeconds(ms: bigint): string { return `${ms / 1000n}.${String(ms % 1000n).padStart(3, "0")}`; }
 export function modelTime<C extends MediaClock>(clock: C, timestamp: string): ApproximateTime<C> {
-  namedClock(clock);
+  parseMediaClock(clock);
   if (!/^\d{2,}:[0-5]\d:[0-5]\d$/.test(timestamp) || timestamp.trim() !== timestamp) refuse("INVALID_INPUT", "Model time must be HH:MM:SS.");
   const [hours, minutes, seconds] = timestamp.split(":").map(BigInt) as [bigint, bigint, bigint];
   return { clock, seconds: readingSeconds((hours * 3600n + minutes * 60n + seconds) * 1000n), precisionMs: 1000, origin: "model" };

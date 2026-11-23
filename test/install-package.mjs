@@ -51,10 +51,15 @@ try {
   `], { cwd: consumer, stdio: 'inherit' });
 
   const fixture = `
-    import { type FrameRate, type TimecodeSpec, type MediaClock, rateSchema, timecodeSpecSchema, fromTicks } from 'exact-time';
+    import { type FrameRate, type TimecodeSpec, type MediaClock, MEDIA_CLOCKS, mediaClockSchema, rateSchema, timecodeSpecSchema, fromTicks } from 'exact-time';
     const rate: FrameRate = rateSchema.parse({ num: 25, den: 1 });
     const spec: TimecodeSpec = timecodeSpecSchema.parse({ rate, dropFrame: false, rateOrigin: 'declared' });
-    const clock: MediaClock = 'source';
+    const names: readonly ['source', 'reel', 'timeline'] = MEDIA_CLOCKS;
+    const clock: MediaClock = mediaClockSchema.parse(names[0]);
+    // @ts-expect-error A fourth name is outside the clock union.
+    const unknownClock: MediaClock = 'day';
+    // @ts-expect-error The exported tuple is read-only.
+    MEDIA_CLOCKS[0] = 'source';
     fromTicks(clock, '0', spec.rate);
   `;
   for (const file of ['use.mts', 'use.cts']) await writeFile(join(consumer, file), fixture);

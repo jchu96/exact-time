@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.3
+
+- Added `MEDIA_CLOCKS` and `mediaClockSchema.parse(value)` in Node, Python and ExtendScript so callers can validate stored clock names with the same rule as conversions.
+
 ## 0.1.2
 
 - Node applications can install the prebuilt package with npm or Bun from a versioned GitHub release URL. The release includes the tarball in `SHA256SUMS` alongside the standalone files.
