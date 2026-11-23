@@ -13,7 +13,7 @@
   },
   "scripts": {
     "release": "node scripts/release.mjs",
-    "check": "tsc --noEmit && npm run release && vitest run && node test/test_table.mjs && node test/test_table.mjs --cjs && node test/test_table.mjs --es3 && python3 -I test/test_python.py"
+    "check": "tsc --noEmit && npm run release && vitest run && node test/test_table.mjs && node test/test_table.mjs --cjs && node test/test_table.mjs --es3 && python3 -I test/test_entry_parity.py && python3 -I test/test_python.py"
   },
   "devDependencies": {
     "@types/node": "22.20.5",

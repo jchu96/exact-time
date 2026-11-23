@@ -98,8 +98,8 @@ def main():
     rate = dict(num=25, den=1)
     try:
         t.snapDecimalSeconds('source', '1', rate)
-    except TypeError:
-        pass
+    except ValueError as error:
+        assert str(error) == 'A frame edge is required. Accepted forms: start, end or instant.'
     else:
         raise AssertionError('MISS T6: default edge accepted')
     boundary = t.snapDecimalSeconds('source', '0.039999999999999999999', rate, 'end')

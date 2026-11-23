@@ -75,8 +75,12 @@ def _entry_refused(reason):
 
 
 def _entry_rate(rate):
+    # JSON has a single number type. Keep whole-valued rates in integer arithmetic.
+    def component(value):
+        return int(value) if isinstance(value, float) and value.is_integer() else value
+
     try:
-        return rationalRate(rate['num'], rate['den'])
+        return rationalRate(component(rate['num']), component(rate['den']))
     except (TypeError, KeyError, ValueError):
         _entry_refused('Rate must contain positive safe whole numbers.')
 
@@ -88,7 +92,7 @@ def _entry_frame(clock, frames, rate):
         _entry_refused(str(error))
 
 
-def snapDecimalSeconds(clock, seconds, rate, edge):
+def snapDecimalSeconds(clock, seconds, rate, edge=None):
     if edge not in ('start', 'end', 'instant'):
         raise ValueError('A frame edge is required. Accepted forms: start, end or instant.')
     if not isinstance(seconds, str) or not re.fullmatch(r'(0|[1-9][0-9]*)(\.[0-9]+)?', seconds):
@@ -128,7 +132,7 @@ def fromPremiereMilliseconds(clock, ms, rate):
 def toPremiereMilliseconds(time):
     if not isinstance(time, dict) or time.get('unit') != 'video-frame':
         _entry_refused('Premiere milliseconds require an exact video frame at a declared video rate.')
-    rate = time['rate']
+    rate = _entry_rate(time.get('rate'))
     return str(Decimal(time['frames'] * _premiere_scale(rate) // rate['num']))
 
 
