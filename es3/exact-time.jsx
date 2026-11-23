@@ -95,8 +95,15 @@ var ExactTime = (function () {
         if (!r || (isDropRate(r) && !choice) || (choice === 'df' && !isDropRate(r))) fail('INVALID_RATE', 'Unsupported or ambiguous timecode rate.');
         return {rate:r, dropFrame:choice === 'df', rateOrigin:'declared'};
     }
+    var mediaClocks = ['source', 'reel', 'timeline'];
+    function parseMediaClock(value) {
+        for (var i = 0; i < mediaClocks.length; i++) {
+            if (value === mediaClocks[i]) return value;
+        }
+        fail('INVALID_INPUT', 'Expected a source, reel or timeline clock; time of day is not a cut point.');
+    }
     function makeTime(clock, frames, rate, unit) {
-        if (clock !== 'source' && clock !== 'reel' && clock !== 'timeline') fail('INVALID_INPUT', 'Expected a source, reel or timeline clock; time of day is not a cut point.');
+        parseMediaClock(clock);
         return {clock:clock, frames:frames, rate:rate, unit:unit};
     }
     function normalizedRate(rate) {
@@ -254,7 +261,11 @@ var ExactTime = (function () {
             fail('INVALID_INPUT', 'Exact offsets require the same rate and unit.');
         return makeTime(offset.clock, add(time.frames, offset.frames), offset.rate, offset.unit);
     }
-    return {TICKS_PER_SECOND:TPS, ticksAtGrid:ticksAtGrid, rationalRate:rationalRate, isDropRate:isDropRate,
+    // Validation uses the private list even on hosts that cannot freeze the public copy.
+    var publicClocks = mediaClocks.slice(0);
+    if (typeof Object.freeze === 'function') Object.freeze(publicClocks);
+    return {MEDIA_CLOCKS:publicClocks, mediaClockSchema:{parse:parseMediaClock},
+        TICKS_PER_SECOND:TPS, ticksAtGrid:ticksAtGrid, rationalRate:rationalRate, isDropRate:isDropRate,
         parseTimecodeRate:parseTimecodeRate, exactTime:exactTime, fromMilliseconds:fromMilliseconds,
         snapDecimalSeconds:snapDecimalSeconds, fromPremiereMilliseconds:fromPremiereMilliseconds,
         toPremiereMilliseconds:toPremiereMilliseconds,

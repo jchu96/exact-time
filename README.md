@@ -21,7 +21,7 @@ Pass counts as decimal strings and choose the clock the value belongs to (`sourc
 Add this line to the `dependencies` object in your application's `package.json`:
 
 ```json
-"exact-time": "https://github.com/jchu96/exact-time/releases/download/v0.1.2/exact-time-0.1.2.tgz"
+"exact-time": "https://github.com/jchu96/exact-time/releases/download/v0.1.3/exact-time-0.1.3.tgz"
 ```
 
 Run `npm install` or `bun install`, then use `import { fromTicks } from "exact-time"` or `require("exact-time")`. The tarball includes both Node builds and their TypeScript declarations. No build or install script is required.
@@ -33,8 +33,8 @@ Verify the tarball against its SHA-256 entry in the release's `SHA256SUMS` as sh
 From a checkout of this repository, download all assets for the chosen tag into a new directory and verify their SHA-256 fingerprints. Keep the tag and the verified fingerprint of each file you use with your application.
 
 ```sh
-gh release download v0.1.2 --dir exact-time-v0.1.2
-(cd exact-time-v0.1.2 && shasum -a 256 -c SHA256SUMS)
+gh release download v0.1.3 --dir exact-time-v0.1.3
+(cd exact-time-v0.1.3 && shasum -a 256 -c SHA256SUMS)
 ```
 
 On Linux, `sha256sum --check SHA256SUMS` also verifies the download. On a subsequent install, compare the downloaded files against your saved fingerprints.
@@ -67,6 +67,12 @@ var frame = ExactTime.exactTime("timeline", "300", film);
 var ms = ExactTime.toPremiereMilliseconds(frame); // "12512"
 ```
 
+## Validators
+
+Use `MEDIA_CLOCKS` to enumerate the accepted names in order and `mediaClockSchema.parse(value)` to check a stored clock. It returns the clock name or raises `INVALID_INPUT` with the same message in Node, Python and ExtendScript. Node callers can also use `rateSchema` and `timecodeSpecSchema` to validate a rate or timecode specification.
+
+Node exposes a frozen array and Python exposes a tuple. ExtendScript hosts without `Object.freeze` receive an array snapshot. Editing that snapshot has no effect on validation.
+
 ## Refusal codes
 
 Read `error.code` in JavaScript and ExtendScript or `exc.code` in Python to distinguish conversion refusals. For example, `fromTicks("source", "1", { num: 25, den: 1 })` raises `NOT_ON_FRAME_BOUNDARY`. The same input to `fromContainingTicks` selects frame zero.
@@ -94,6 +100,6 @@ npm run check
 
 The suite checks clock types, the independent oracle, and all 107 contract rows against both Node builds, Python and the ES3 file. The ES3 tests use Node’s VM. The table and the two design records explain the conversion rules. [Case table](contracts/time-cases.json) · [Exact frames](docs/adr/0027-exact-rational-frame-times.md) · [Choosing a frame](docs/adr/0028-time-to-frame.md)
 
-Run `npm run release` to rebuild the standalone files, dependency tarball and their `SHA256SUMS` manifest in `dist/`. A matching version tag such as `v0.1.2` attaches those files to a GitHub release after the test matrix passes.
+Run `npm run release` to rebuild the standalone files, dependency tarball and their `SHA256SUMS` manifest in `dist/`. A matching version tag such as `v0.1.3` attaches those files to a GitHub release after the test matrix passes.
 
 Distributed under the [MIT license](LICENSE).

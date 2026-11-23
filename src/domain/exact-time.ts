@@ -1,6 +1,6 @@
 import { fail, type RefusalCode } from "./refusal.js";
 import { rationalRate, isDropRate, type FrameRate } from "./time-rate.js";
-import type { MediaClock } from "./media-clock.js";
+import { MEDIA_CLOCKS, type MediaClock } from "./media-clock.js";
 
 export const TICKS_PER_SECOND = 254016000000n;
 const FORMS = "Accepted forms: unsigned whole frames, ticks or milliseconds; HH:MM:SS:FF (non-drop) or HH:MM:SS;FF (drop), at a declared rate.";
@@ -12,9 +12,20 @@ function natural(value: string): bigint {
   if (trimmed !== value || !/^(0|[1-9]\d*)$/.test(value)) refuse("INVALID_INPUT", "Expected a non-negative unpadded whole number.");
   return BigInt(value);
 }
-function namedClock(clock: MediaClock): void {
-  if (!["source", "reel", "timeline"].includes(clock)) refuse("INVALID_INPUT", "Expected a source, reel or timeline clock; time of day is not a cut point.");
+const CLOCK_REFUSAL = "Expected a source, reel or timeline clock; time of day is not a cut point.";
+function isMediaClock(value: unknown): value is MediaClock {
+  return MEDIA_CLOCKS.some(clock => clock === value);
 }
+function namedClock(clock: MediaClock): void {
+  if (!isMediaClock(clock)) refuse("INVALID_INPUT", CLOCK_REFUSAL);
+}
+export const mediaClockSchema = {
+  parse(value: unknown): MediaClock {
+    if (!isMediaClock(value)) fail("INVALID_INPUT", new Error(CLOCK_REFUSAL));
+    return value;
+  },
+};
+
 declare const exactBrand: unique symbol;
 export type ExactTime<C extends MediaClock = MediaClock> = Readonly<{
   clock: C; frames: bigint; rate: Readonly<FrameRate>; unit: "video-frame" | "millisecond";

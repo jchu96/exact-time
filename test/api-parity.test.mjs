@@ -9,8 +9,10 @@ import * as esm from '../dist/exact-time.mjs';
 
 const dist = fileURLToPath(new URL('../dist/', import.meta.url));
 const cjs = createRequire(import.meta.url)('../dist/exact-time.cjs');
-const panel = vm.runInNewContext(readFileSync(dist + 'exact-time.jsx', 'utf8') + '\nExactTime');
+const panelScript = readFileSync(dist + 'exact-time.jsx', 'utf8') + '\nExactTime';
+const panel = vm.runInNewContext(panelScript);
 const rate = { num: 25, den: 1 };
+const clockRefusal = 'Expected a source, reel or timeline clock; time of day is not a cut point.';
 // Keep the decimal spelling on the wire so Python actually receives floats.
 const wholeRate = { num: JSON.rawJSON('25.0'), den: JSON.rawJSON('1.0') };
 const wire = JSON.stringify([
@@ -20,6 +22,9 @@ const wire = JSON.stringify([
   ['renderExactTimecode', [['source', '1', rate]], 'INVALID_TIMECODE'],
   ['fromContainingTicks', ['reel', '0', { num: 11, den: 1 }], 'UNREPRESENTABLE'],
   ['exactTime', ['reel', '01', rate], 'INVALID_INPUT'],
+  ['mediaClockSchema.parse', ['day'], 'INVALID_INPUT'],
+  ['mediaClockSchema.parse', [null], 'INVALID_INPUT'],
+  ['mediaClockSchema.parse', ['Reel'], 'INVALID_INPUT'],
   ['ticksAtGrid', ['1', '0'], 'INVALID_INPUT'],
   ['snapDecimalSeconds', ['reel', '1', rate, 'nearest'], 'INVALID_INPUT'],
   ['snapDecimalSeconds', ['day', '1', rate, 'instant'], 'INVALID_INPUT'],
@@ -39,17 +44,35 @@ const python = JSON.parse(execFileSync('python3', ['-IB', '-c', `
 import json, sys
 sys.path.insert(0, sys.argv[1])
 import exact_time
-codes = []
+refusals = []
 for name, args, expected in json.load(sys.stdin):
     try:
         if name == 'renderExactTimecode':
             args = [exact_time.exactTime(*args[0])]
-        getattr(exact_time, name)(*args)
+        if name == 'mediaClockSchema.parse':
+            exact_time.mediaClockSchema.parse(*args)
+        else:
+            getattr(exact_time, name)(*args)
     except Exception as error:
-        codes.append(getattr(error, 'code', None))
+        refusals.append(dict(code=getattr(error, 'code', None), message=str(error)))
     else:
-        codes.append('accepted')
-print(json.dumps(dict(names=[n for n in dir(exact_time) if not n.startswith('_')], codes=codes)))
+        refusals.append(None)
+clocks = exact_time.MEDIA_CLOCKS
+assert isinstance(clocks, tuple)
+for clock in clocks:
+    assert exact_time.mediaClockSchema.parse(clock) == clock
+    assert exact_time.exactTime(clock, '0', {'num': 25, 'den': 1})['clock'] == clock
+# Narrow the rule in this isolated process to detect a private copy in either caller.
+exact_time.MEDIA_CLOCKS = tuple(c for c in clocks if c != 'reel')
+for parse in (exact_time.mediaClockSchema.parse, lambda c: exact_time.exactTime(c, '0', {'num': 25, 'den': 1})):
+    try:
+        parse('reel')
+    except ValueError as error:
+        assert error.code == 'INVALID_INPUT'
+        assert str(error) == 'Expected a source, reel or timeline clock; time of day is not a cut point.'
+    else:
+        raise AssertionError('reel was accepted after removal from MEDIA_CLOCKS')
+print(json.dumps(dict(names=[n for n in dir(exact_time) if not n.startswith('_')], refusals=refusals, clocks=clocks)))
 `, dist], { input: wire, encoding: 'utf8' }));
 
 // Existing Node-only serializers, approximate-time helpers and validators.
@@ -89,12 +112,42 @@ test('release exports match across CommonJS, ES modules, ES3 and Python', () => 
   }
 });
 
-test.each(probes.map(([name, args, expected], i) => [name, args, expected, python.codes[i]]))(
-  'refusal codes match for %s(%j) → %s', (name, args, expected, pythonCode) => {
+test('release clock lists and their validators agree', () => {
+  expect(python.clocks).toEqual(['source', 'reel', 'timeline']);
+  const forms = 'Accepted forms: unsigned whole frames, ticks or milliseconds; HH:MM:SS:FF (non-drop) or HH:MM:SS;FF (drop), at a declared rate.';
+  for (const [form, api] of [['CommonJS', cjs], ['ES module', esm], ['ES3', panel]]) {
+    expect(Array.from(api.MEDIA_CLOCKS), form + ' MEDIA_CLOCKS').toEqual(python.clocks);
+    expect(Object.isFrozen(api.MEDIA_CLOCKS), form).toBe(true);
+    for (const clock of api.MEDIA_CLOCKS) {
+      expect(api.mediaClockSchema.parse(clock)).toBe(clock);
+      expect(api.exactTime(clock, '0', rate).clock).toBe(clock);
+    }
+    const message = form === 'ES3' ? clockRefusal : clockRefusal + ' ' + forms;
+    expect(() => api.exactTime('day', '0', rate)).toThrow(expect.objectContaining({
+      name: 'Error', code: 'INVALID_INPUT', message,
+    }));
+  }
+});
+
+test('ES3 callers cannot change clock validation by editing their snapshot', () => {
+  const legacy = vm.runInNewContext('Object.freeze = undefined;\n' + panelScript);
+  expect(Array.from(legacy.MEDIA_CLOCKS)).toEqual(python.clocks);
+  legacy.MEDIA_CLOCKS[1] = 'day';
+  expect(legacy.MEDIA_CLOCKS[1]).toBe('day');
+  expect(legacy.mediaClockSchema.parse('reel')).toBe('reel');
+  expect(legacy.exactTime('reel', '0', rate).clock).toBe('reel');
+  expect(() => legacy.mediaClockSchema.parse('day')).toThrow(expect.objectContaining({ code: 'INVALID_INPUT' }));
+  expect(() => legacy.exactTime('day', '0', rate)).toThrow(expect.objectContaining({ code: 'INVALID_INPUT' }));
+});
+
+test.each(probes.map(([name, args, expected], i) => [name, args, expected, python.refusals[i]]))(
+  'refusals match for %s(%j) → %s', (name, args, expected, pythonRefusal) => {
+    const refusal = name === 'mediaClockSchema.parse' ? { code: expected, message: clockRefusal } : { code: expected };
     for (const [form, api] of [['CommonJS', cjs], ['ES module', esm], ['ES3', panel]]) {
       const callArgs = name === 'renderExactTimecode' ? [api.exactTime(...args[0])] : args;
-      expect(() => api[name](...callArgs), form + ' ' + name).toThrow(expect.objectContaining({ code: expected }));
+      const parse = name === 'mediaClockSchema.parse' ? api.mediaClockSchema.parse : api[name];
+      expect(() => parse(...callArgs), form + ' ' + name).toThrow(expect.objectContaining(refusal));
     }
-    expect(pythonCode, 'Python ' + name).toBe(expected);
+    expect(pythonRefusal, 'Python ' + name).toMatchObject(refusal);
   },
 );
