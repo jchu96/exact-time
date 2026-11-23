@@ -2,3 +2,10 @@ node_modules/
 dist/
 __pycache__/
 *.pyc
+
+# Working papers for a change; never committed
+BRIEF-*.md
+STATUS-*.md
+REVIEW-*.md
+STEER-*.md
+MUTANTS-*.md
