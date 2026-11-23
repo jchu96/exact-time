@@ -53,6 +53,10 @@ var frame = ExactTime.exactTime("timeline", "300", film);
 var ms = ExactTime.toPremiereMilliseconds(frame); // "12512"
 ```
 
+## Limits
+
+The TypeScript rate validators accept ordinary rate objects with numeric fields. A getter that mutates the object during validation can change the outcome. A refusal throws a plain `RangeError` or `TypeError` with a message and no `issues` array. When migrating from the earlier in-tool module, read the error message and remove dependencies on the schema library’s error shape.
+
 ## Test and build
 
 Use Node 22.12+ or 24 and Python 3.11 or 3.13. With `python3` on your path, run:

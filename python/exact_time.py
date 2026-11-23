@@ -12,9 +12,9 @@ TICKS_PER_SECOND = 254016000000
 
 
 def natural(value):
-    if not isinstance(value, str) or not re.fullmatch(r'0|[1-9]\d*', value):
+    if not isinstance(value, str) or not re.fullmatch(r'0|[1-9][0-9]*', value):
         raise ValueError('Expected a non-negative unpadded whole number.')
-    return int(value)
+    return int(Decimal(value))
 
 
 def rationalRate(num, den):
@@ -41,7 +41,7 @@ def parseTimecodeRate(value):
             rate = rationalRate(*aliases[name])
         elif name in ('24', '25', '30', '48', '50', '60'):
             rate = rationalRate(int(name), 1)
-        elif re.fullmatch(r'[1-9]\d*/[1-9]\d*', name):
+        elif re.fullmatch(r'[1-9][0-9]*/[1-9][0-9]*', name):
             rate = rationalRate(*map(int, name.split('/')))
         else:
             raise ValueError(fail)
@@ -163,7 +163,7 @@ def renderExactTimecode(time, dropFrame):
 def fromTimecode(clock, value, rate, dropFrame):
     zero = exactTime(clock, '0', rate)
     nominal = nominalRate(zero, dropFrame)
-    m = re.fullmatch(r'(\d{2}|[1-9]\d{2,}):([0-5]\d):([0-5]\d)([:;])(\d{2}|[1-9]\d{2,})', value)
+    m = re.fullmatch(r'(\d{2}|[1-9]\d{2,}):([0-5]\d):([0-5]\d)([:;])(\d{2}|[1-9]\d{2,})', value, re.ASCII)
     if not m:
         raise ValueError('Malformed timecode.')
     if m[4] != (';' if dropFrame else ':'):
@@ -229,12 +229,24 @@ def offsetTime(time, offset):
 
 # Boundary adapters used by the existing tools. They do not choose a video rate
 # for an audio clock, or a drop-frame policy from a fractional number alone.
+def _ascii_digits(value):
+    # int and Fraction accept Unicode decimal digits in otherwise valid numeric text.
+    if isinstance(value, str) and not value.isascii():
+        if any(char.isdecimal() and not char.isascii() for char in value):
+            raise ValueError('Expected ASCII digits.')
+    return value
+
+
+def _fraction(value):
+    return Fraction(_ascii_digits(str(value)))
+
+
 def rate(value):
     if isinstance(value, dict):
         return rationalRate(value.get('num', value.get('numerator')), value.get('den', value.get('denominator')))
     if isinstance(value, float) and value == round(value * 1001) / 1001:
         return rationalRate(round(value * 1001), 1001)
-    text = str(value)
+    text = _ascii_digits(str(value))
     aliases = {'23.976': (24000, 1001), '29.97': (30000, 1001), '47.952': (48000, 1001), '59.94': (60000, 1001)}
     f = Fraction(*aliases[text]) if text in aliases else Fraction(text)
     return rationalRate(f.numerator, f.denominator)
@@ -242,7 +254,7 @@ def rate(value):
 
 def seconds_frames(seconds, fps, offset=0):
     r = rate(fps)
-    s = Fraction(str(seconds)) + Fraction(str(offset))
+    s = _fraction(seconds) + _fraction(offset)
     if s < 0:
         raise ValueError('Negative instant.')
     return (s * Fraction(r['num'], r['den'])).__floor__()
@@ -265,23 +277,23 @@ def timecode_frames(value, fps, drop=False):
 
 
 def ticks_seconds(ticks):
-    return Fraction(int(ticks), TICKS_PER_SECOND)
+    return Fraction(int(_ascii_digits(ticks)), TICKS_PER_SECOND)
 
 
 def subtitle(seconds):
-    ms = math.ceil(Fraction(str(seconds)) * 1000)
+    ms = math.ceil(_fraction(seconds) * 1000)
     return f'{ms // 3600000:02}:{ms // 60000 % 60:02}:{ms // 1000 % 60:02},{ms % 1000:03}'
 
 
 def clock_fraction(value):
-    text = str(value).replace(',', '.')
+    text = _ascii_digits(str(value)).replace(',', '.')
     if ':' not in text:
         result = Fraction(text)
     else:
         parts = text.split(':')
         if len(parts) == 2:
             parts.insert(0, '00')
-        if len(parts) != 3 or not parts[0].isdigit() or not parts[1].isdigit():
+        if len(parts) != 3 or not re.fullmatch(r'[0-9]+', parts[0]) or not re.fullmatch(r'[0-9]+', parts[1]):
             raise ValueError('Expected HH:MM:SS(.mmm).')
         h, m = map(int, parts[:2]); sec = Fraction(parts[2])
         if not 0 <= m < 60 or not 0 <= sec < 60:
@@ -297,7 +309,7 @@ def clock_seconds(value):
 
 
 def seconds_ticks(value):
-    result = Fraction(str(value)) * TICKS_PER_SECOND
+    result = _fraction(value) * TICKS_PER_SECOND
     if result.denominator != 1:
         raise ValueError('Seconds are not an exact tick boundary.')
     return result.numerator
@@ -315,12 +327,12 @@ def frames_from_grid(ticks, grid):
 
 
 def xml_rate(node):
-    nominal = int(node.findtext('rate/timebase'))
+    nominal = int(_ascii_digits(node.findtext('rate/timebase')))
     return Fraction(nominal * 1000, 1001) if node.findtext('rate/ntsc') == 'TRUE' else Fraction(nominal, 1)
 
 
 def seconds_display(seconds):
-    ms = math.ceil(Fraction(str(seconds)) * 1000)
+    ms = math.ceil(_fraction(seconds) * 1000)
     return ms / 1000
 
 
@@ -330,12 +342,12 @@ def relative_frame_seconds(frame, origin, fps):
 
 
 def seconds_difference(end, start):
-    return Fraction(str(end)) - Fraction(str(start))
+    return _fraction(end) - _fraction(start)
 
 
 def infer_nominal_rate(text):
     """Legacy subtitle metadata heuristic; not evidence of an exact media rate."""
-    fields = [int(x) for x in re.findall(r'\d{1,2}:\d{2}:\d{2}:(\d{2})', text)]
+    fields = [int(x) for x in re.findall(r'\d{1,2}:\d{2}:\d{2}:(\d{2})', text, re.ASCII)]
     maximum = max(fields) if fields else 0
     guess = {23: 24, 24: 25, 29: 30, 25: 'odd', 59: 60}.get(maximum) if len(fields) >= 30 else None
     return guess, len(fields), maximum
