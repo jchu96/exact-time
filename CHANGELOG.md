@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.4
+
+- `fromOtioTime` and `fromOtioRange` (Node, Python and ExtendScript), first shipped in `0.1.4-beta.1`, are released unchanged. They read OpenTimelineIO `RationalTime.1` and `TimeRange.1` objects into exact frame times and refuse a value that is not a whole number of frames or a fractional rate that is not exactly an accepted rate.
+
 ## 0.1.4-beta.1
 
 Pre-release.
