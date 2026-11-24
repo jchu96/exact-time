@@ -150,6 +150,41 @@ export function toOtioRange(range: ExactRange) {
   return { OTIO_SCHEMA: "TimeRange.1" as const, start_time: toOtioTime(range.start), duration: toOtioTime(range.duration) };
 }
 
+const otioRates = [
+  [24, 1], [25, 1], [30, 1], [48, 1], [50, 1], [60, 1],
+  [24000, 1001], [48000, 1001], [30000, 1001], [60000, 1001],
+] as const;
+
+function otioObject(input: unknown, schema: string): Record<string, unknown> {
+  if (typeof input !== "object" || input === null || Array.isArray(input) ||
+      !("OTIO_SCHEMA" in input) || input.OTIO_SCHEMA !== schema) {
+    refuse("INVALID_INPUT", `Expected OTIO_SCHEMA ${schema}.`);
+  }
+  return input as Record<string, unknown>;
+}
+
+export function fromOtioTime<C extends MediaClock>(clock: C, input: unknown): ExactTime<C> {
+  const { value, rate } = otioObject(input, "RationalTime.1");
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    refuse("INVALID_INPUT", "OTIO value must be a non-negative whole number.");
+  }
+  if (value > Number.MAX_SAFE_INTEGER) refuse("UNREPRESENTABLE", "OTIO value exceeds the safe whole-frame range.");
+  for (const [num, den] of otioRates) {
+    if (rate === num / den) return makeTime(clock, BigInt(value), { num, den }, "video-frame");
+  }
+  return refuse("INVALID_RATE", "OTIO rate must exactly match a supported frame rate.");
+}
+
+export function fromOtioRange<C extends MediaClock>(clock: C, input: unknown): ExactRange<C> {
+  const range = otioObject(input, "TimeRange.1");
+  const start = fromOtioTime(clock, range.start_time);
+  const duration = fromOtioTime(clock, range.duration);
+  if (start.rate.num !== duration.rate.num || start.rate.den !== duration.rate.den) {
+    refuse("INVALID_RATE", "OTIO range start and duration must have the same rate.");
+  }
+  return { start, duration };
+}
+
 /** Exact milliseconds only; never invent an ms value for a fractional frame boundary. */
 export function exactMilliseconds(time: ExactTime): string | undefined {
   const value = time.frames * 1000n * BigInt(time.rate.den);

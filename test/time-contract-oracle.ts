@@ -176,3 +176,27 @@ export function tickOracle(row: TickCase) {
   return { clock: row.clock, frames: String(count), rate: { num: Number(num), den: Number(den) },
     unit: row.rate ? "video-frame" : "millisecond" };
 }
+
+type OtioTimeSample = { OTIO_SCHEMA: "RationalTime.1"; value: number; rate: number };
+export type OtioCase = { id: string; clock: string; expected?: unknown; refused?: string } & (
+  | { op: "fromOtioTime"; input: OtioTimeSample }
+  | { op: "fromOtioRange"; input: { OTIO_SCHEMA: "TimeRange.1"; start_time: OtioTimeSample; duration: OtioTimeSample } }
+);
+
+export function otioOracle(row: OtioCase) {
+  // The fractional doubles in these fixtures were observed in a timeline export.
+  function time({ value, rate }: OtioTimeSample) {
+    if (value < 0 || !Number.isInteger(value)) return "INVALID_INPUT";
+    if (BigInt(value) >= 2n ** 53n) return "UNREPRESENTABLE";
+    let rational;
+    switch (rate) {
+      case 23.976023976023978: rational = { num: 24000, den: 1001 }; break;
+      case 29.97002997002997: rational = { num: 30000, den: 1001 }; break;
+      case 24: case 25: rational = { num: rate, den: 1 }; break;
+      default: throw new Error(`No independent OTIO fixture rate for ${row.id}`);
+    }
+    return { clock: row.clock, frames: String(value), rate: rational, unit: "video-frame" };
+  }
+  if (row.op === "fromOtioTime") return time(row.input);
+  return { start: time(row.input.start_time), duration: time(row.input.duration) };
+}

@@ -232,6 +232,37 @@ var ExactTime = (function () {
     }
     function fromTicks(clock, ticks, rate) { return timeAtTicks(clock, ticks, rate, true); }
     function fromContainingTicks(clock, ticks, rate) { return timeAtTicks(clock, ticks, rate, false); }
+    var otioRates = [
+        [24, 1], [25, 1], [30, 1], [48, 1], [50, 1], [60, 1],
+        [24000, 1001], [48000, 1001], [30000, 1001], [60000, 1001]
+    ];
+    function otioObject(input, schema) {
+        if (!input || typeof input !== 'object' || Object.prototype.toString.call(input) === '[object Array]' || input.OTIO_SCHEMA !== schema)
+            entryRefused('INVALID_INPUT', 'Expected OTIO_SCHEMA ' + schema + '.');
+        return input;
+    }
+    function fromOtioTime(clock, input) {
+        var time = otioObject(input, 'RationalTime.1');
+        var value = time.value, rate = time.rate, i, pair;
+        if (typeof value !== 'number' || !isFinite(value) || Math.floor(value) !== value || value < 0)
+            entryRefused('INVALID_INPUT', 'OTIO value must be a non-negative whole number.');
+        if (value > 9007199254740991)
+            entryRefused('UNREPRESENTABLE', 'OTIO value exceeds the safe whole-frame range.');
+        for (i = 0; i < otioRates.length; i++) {
+            pair = otioRates[i];
+            if (rate === pair[0] / pair[1])
+                return entryFrame(clock, String(value), {num:pair[0], den:pair[1]});
+        }
+        entryRefused('INVALID_RATE', 'OTIO rate must exactly match a supported frame rate.');
+    }
+    function fromOtioRange(clock, input) {
+        var range = otioObject(input, 'TimeRange.1');
+        var start = fromOtioTime(clock, range.start_time);
+        var duration = fromOtioTime(clock, range.duration);
+        if (start.rate.num !== duration.rate.num || start.rate.den !== duration.rate.den)
+            entryRefused('INVALID_RATE', 'OTIO range start and duration must have the same rate.');
+        return {start:start, duration:duration};
+    }
     function deriveExact(time, dropFrame) {
         var f = time.frames, n = String(time.rate.num), d = String(time.rate.den);
         var ms = div(add(mul(mul(f, '1000'), d), sub(n, '1')), n);
@@ -270,6 +301,7 @@ var ExactTime = (function () {
         snapDecimalSeconds:snapDecimalSeconds, fromPremiereMilliseconds:fromPremiereMilliseconds,
         toPremiereMilliseconds:toPremiereMilliseconds,
         fromTicks:fromTicks, fromContainingTicks:fromContainingTicks, fromTimecode:fromTimecode, deriveExact:deriveExact,
+        fromOtioTime:fromOtioTime, fromOtioRange:fromOtioRange,
         renderExactTimecode:renderExactTimecode, exactSeconds:exactSeconds, offsetTime:offsetTime};
 }());
 

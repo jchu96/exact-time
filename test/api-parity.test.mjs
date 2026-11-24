@@ -15,7 +15,25 @@ const rate = { num: 25, den: 1 };
 const clockRefusal = 'Expected a source, reel or timeline clock; time of day is not a cut point.';
 // Keep the decimal spelling on the wire so Python actually receives floats.
 const wholeRate = { num: JSON.rawJSON('25.0'), den: JSON.rawJSON('1.0') };
+const otioTime = (value, rate) => ({ OTIO_SCHEMA: 'RationalTime.1', value, rate });
+const otioRange = (start_time, duration) => ({ OTIO_SCHEMA: 'TimeRange.1', start_time, duration });
+// A JSON exponent outside binary64's range reaches each reader as infinity.
+const overflow = JSON.rawJSON('1e400');
+const nextDoubleAboveFilmRate = 23.97602397602398;
 const wire = JSON.stringify([
+  ...[23.976, 23.98, 29.97, 59.94, nextDoubleAboveFilmRate, 0, -24, 11, overflow, '24', true].map(rate =>
+    ['fromOtioTime', ['source', otioTime(0, rate)], 'INVALID_RATE']),
+  ...[-8631368.631368631, 0.5, -1, overflow, '1', true].map(value =>
+    ['fromOtioTime', ['source', otioTime(value, 24000 / 1001)], 'INVALID_INPUT']),
+  ['fromOtioTime', ['source', otioTime(9007199254740992, 24)], 'UNREPRESENTABLE'],
+  ['fromOtioTime', ['source', { value: 0, rate: 24 }], 'INVALID_INPUT'],
+  ['fromOtioTime', ['source', { ...otioTime(0, 24), OTIO_SCHEMA: 'RationalTime.2' }], 'INVALID_INPUT'],
+  ['fromOtioTime', ['day', otioTime(0, 24)], 'INVALID_INPUT'],
+  ['fromOtioRange', ['source', otioTime(0, 24)], 'INVALID_INPUT'],
+  ['fromOtioRange', ['source', {}], 'INVALID_INPUT'],
+  ['fromOtioRange', ['source', otioRange(otioTime(0, 24), null)], 'INVALID_INPUT'],
+  ['fromOtioRange', ['source', otioRange(otioTime(0, 24), otioTime(0, 25))], 'INVALID_RATE'],
+  ['fromOtioRange', ['source', otioRange(otioTime(0, 24), otioTime(-1, 24))], 'INVALID_INPUT'],
   ['fromTicks', ['source', '1', rate], 'NOT_ON_FRAME_BOUNDARY'],
   ['fromTicks', ['reel', '10160640001', wholeRate], 'NOT_ON_FRAME_BOUNDARY'],
   ['fromTicks', ['reel', '10160640000', { num: 25.5, den: 1 }], 'INVALID_RATE'],
@@ -93,6 +111,36 @@ const typesOnly = [
   'ApproximateTime', 'DecimalFrameTime', 'ExactRange', 'ExactTime', 'FrameEdge', 'FrameRate',
   'MediaClock', 'SnappedTime', 'TimecodeSpec',
 ];
+
+test('OTIO times and ranges round trip through every reader at all ten named rates', () => {
+  const rates = [
+    ...[24, 25, 30, 48, 50, 60].map(num => ({ num, den: 1 })),
+    ...[24000, 48000, 30000, 60000].map(num => ({ num, den: 1001 })),
+  ];
+  const samples = rates.map(rate => {
+    const start = esm.exactTime('reel', '86472', rate);
+    const duration = esm.exactTime('reel', '96', rate);
+    return [rate, esm.toOtioTime(start), esm.toOtioRange({ start, duration })];
+  });
+  for (const [rate, time, range] of samples) {
+    for (const api of [esm, cjs, panel]) {
+      const start = api.exactTime('reel', '86472', rate);
+      const duration = api.exactTime('reel', '96', rate);
+      expect(api.fromOtioTime('reel', time)).toEqual(start);
+      expect(api.fromOtioRange('reel', range)).toEqual({ start, duration });
+    }
+  }
+  execFileSync('python3', ['-IB', '-c', `
+import json, sys
+sys.path.insert(0, sys.argv[1])
+import exact_time as t
+for rate, time, span in json.load(sys.stdin):
+    start = t.exactTime('reel', '86472', rate)
+    duration = t.exactTime('reel', '96', rate)
+    assert t.fromOtioTime('reel', time) == start, rate
+    assert t.fromOtioRange('reel', span) == dict(start=start, duration=duration), rate
+`, dist], { input: JSON.stringify(samples) });
+});
 
 test('release exports match across CommonJS, ES modules, ES3 and Python', () => {
   const common = Object.keys(panel);

@@ -71,20 +71,33 @@ for (const c of table.entryCases) {
   entryCount++;
 }
 assert.deepEqual([legacyCount, entryCount], [66, 33], 'MISS T8: entry rows not run');
+function portableTime(time) {
+  return {...time, frames:String(time.frames), rate:{...time.rate}};
+}
 function runTick(row) {
   if (row.op === 'ticksAtGrid') return t.ticksAtGrid(row.frames, row.grid);
   assert.equal(row.op, 'fromContainingTicks');
   const time = t.fromContainingTicks(row.clock, row.ticks, row.rate);
-  return {...time, frames:String(time.frames), rate:{...time.rate}};
+  return portableTime(time);
 }
-let tickCount = 0;
-for (const row of table.tickCases) {
-  if (row.refused) assert.throws(() => runTick(row), {code:row.refused}, row.id);
-  else assert.deepEqual(runTick(row), row.expected, row.id);
-  tickCount++;
+function runOtio(row) {
+  if (row.op === 'fromOtioTime') return portableTime(t.fromOtioTime(row.clock, row.input));
+  assert.equal(row.op, 'fromOtioRange');
+  const range = t.fromOtioRange(row.clock, row.input);
+  return {...range, start:portableTime(range.start), duration:portableTime(range.duration)};
 }
+function checkRows(rows, run) {
+  for (const row of rows) {
+    if (row.refused) assert.throws(() => run(row), {code:row.refused}, row.id);
+    else assert.deepEqual(run(row), row.expected, row.id);
+  }
+  return rows.length;
+}
+const tickCount = checkRows(table.tickCases, runTick);
+const otioCount = checkRows(table.otioCases, runOtio);
 assert.equal(tickCount, 8, 'tick rows run');
+assert.equal(otioCount, 7, 'OTIO rows run');
 const rate = {num:25, den:1};
 assert.throws(() => t.snapDecimalSeconds('source', '1', rate), /frame edge is required/, 'MISS T6: default edge accepted');
 assert.equal(String(t.snapDecimalSeconds('source', '0.039999999999999999999', rate, 'end').frames), '0', 'MISS T9: decimal lost a digit');
-console.log(`${cjs ? 'COMMONJS' : es ? 'EXTENDSCRIPT' : 'ES MODULE'} TABLE OK: ${legacyCount + entryCount + tickCount} cases and available inverses (66 legacy + 33 entry + ${tickCount} tick)`);
+console.log(`${cjs ? 'COMMONJS' : es ? 'EXTENDSCRIPT' : 'ES MODULE'} TABLE OK: ${legacyCount + entryCount + tickCount + otioCount} cases and available inverses (66 legacy + 33 entry + ${tickCount} tick + ${otioCount} OTIO)`);

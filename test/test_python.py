@@ -54,6 +54,26 @@ def run_tick(row):
     return dict(time, frames=str(time['frames']))
 
 
+def run_otio(row):
+    if row['op'] == 'fromOtioTime':
+        time = t.fromOtioTime(row['clock'], row['input'])
+        return dict(time, frames=str(time['frames']))
+    assert row['op'] == 'fromOtioRange'
+    result = t.fromOtioRange(row['clock'], row['input'])
+    return {key: dict(time, frames=str(time['frames'])) for key, time in result.items()}
+
+
+def check_rows(rows, run_case):
+    for row in rows:
+        try:
+            got = run_case(row)
+        except ValueError as error:
+            assert error.code == row['refused'], row['id']
+        else:
+            assert got == row['expected'], row['id']
+    return len(rows)
+
+
 def run_table(override=None):
     canonical = CONTRACT.read_bytes()
     if override and Path(override).read_bytes() != canonical:
@@ -85,17 +105,12 @@ def run_table(override=None):
             assert got == c.get('expected'), f"MISS {c['id']}: {got}"
         entry_count += 1
     assert (legacy_count, entry_count) == (66, 33), 'MISS T8: entry rows not run'
-    tick_count = 0
-    for row in table['tickCases']:
-        try:
-            got = run_tick(row)
-        except ValueError as error:
-            assert error.code == row['refused'], row['id']
-        else:
-            assert got == row['expected'], row['id']
-        tick_count += 1
+    tick_count = check_rows(table['tickCases'], run_tick)
+    otio_count = check_rows(table['otioCases'], run_otio)
     assert tick_count == 8, 'tick rows run'
-    print(f'PYTHON TABLE OK: {legacy_count + entry_count + tick_count} cases and available inverses (66 legacy + 33 entry + {tick_count} tick)')
+    assert otio_count == 7, 'OTIO rows run'
+    print(f'PYTHON TABLE OK: {legacy_count + entry_count + tick_count + otio_count} cases and available inverses '
+          f'(66 legacy + 33 entry + {tick_count} tick + {otio_count} OTIO)')
 
 
 def main():
