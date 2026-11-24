@@ -1,6 +1,6 @@
 {
   "name": "exact-time",
-  "version": "0.1.4-beta.1",
+  "version": "0.1.4",
   "description": "Exact video frame times across TypeScript, Python and ExtendScript.",
   "license": "MIT",
   "files": [

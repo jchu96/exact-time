@@ -41,7 +41,7 @@ The format carries no drop-frame choice. Supply that choice when rendering timec
 Add this line to the `dependencies` object in your application's `package.json`:
 
 ```json
-"exact-time": "https://github.com/jchu96/exact-time/releases/download/v0.1.3/exact-time-0.1.3.tgz"
+"exact-time": "https://github.com/jchu96/exact-time/releases/download/v0.1.4/exact-time-0.1.4.tgz"
 ```
 
 Run `npm install` or `bun install`, then use `import { fromTicks } from "exact-time"` or `require("exact-time")`. The tarball includes both Node builds and their TypeScript declarations. No build or install script is required.
@@ -53,8 +53,8 @@ Verify the tarball against its SHA-256 entry in the release's `SHA256SUMS` as sh
 From a checkout of this repository, download all assets for the chosen tag into a new directory and verify their SHA-256 fingerprints. Keep the tag and the verified fingerprint of each file you use with your application.
 
 ```sh
-gh release download v0.1.3 --dir exact-time-v0.1.3
-(cd exact-time-v0.1.3 && shasum -a 256 -c SHA256SUMS)
+gh release download v0.1.4 --dir exact-time-v0.1.4
+(cd exact-time-v0.1.4 && shasum -a 256 -c SHA256SUMS)
 ```
 
 On Linux, `sha256sum --check SHA256SUMS` also verifies the download. On a subsequent install, compare the downloaded files against your saved fingerprints.
@@ -120,6 +120,6 @@ npm run check
 
 The suite checks clock types, the independent oracle, and all 120 contract rows against both Node builds, Python and the ES3 file. The ES3 tests use Node’s VM. The table and the two design records explain the conversion rules. [Case table](contracts/time-cases.json) · [Exact frames](docs/adr/0027-exact-rational-frame-times.md) · [Choosing a frame](docs/adr/0028-time-to-frame.md)
 
-Run `npm run release` to rebuild the standalone files, dependency tarball and their `SHA256SUMS` manifest in `dist/`. A matching version tag such as `v0.1.3` attaches those files to a GitHub release after the test matrix passes.
+Run `npm run release` to rebuild the standalone files, dependency tarball and their `SHA256SUMS` manifest in `dist/`. A matching version tag such as `v0.1.4` attaches those files to a GitHub release after the test matrix passes.
 
 Distributed under the [MIT license](LICENSE).
