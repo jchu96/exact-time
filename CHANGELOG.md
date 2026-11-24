@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.4-beta.1
+
+Pre-release.
+
+- Added `fromOtioTime` and `fromOtioRange` in Node, Python and ExtendScript. They read OpenTimelineIO `RationalTime.1` and `TimeRange.1` objects into exact frame times. A value must be a whole number of frames. A rate is accepted when its double equals a named rate, when it is a positive whole number, or when the caller passes a matching rational rate; any other fractional rate is refused.
+- A tag with a pre-release suffix is published as a GitHub pre-release and is not marked Latest.
+
 ## 0.1.3
 
 - Added `MEDIA_CLOCKS` and `mediaClockSchema.parse(value)` in Node, Python and ExtendScript so callers can validate stored clock names with the same rule as conversions.
