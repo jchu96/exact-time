@@ -81,9 +81,9 @@ function runTick(row) {
   return portableTime(time);
 }
 function runOtio(row) {
-  if (row.op === 'fromOtioTime') return portableTime(t.fromOtioTime(row.clock, row.input));
+  if (row.op === 'fromOtioTime') return portableTime(t.fromOtioTime(row.clock, row.input, row.rate));
   assert.equal(row.op, 'fromOtioRange');
-  const range = t.fromOtioRange(row.clock, row.input);
+  const range = t.fromOtioRange(row.clock, row.input, row.rate);
   return {...range, start:portableTime(range.start), duration:portableTime(range.duration)};
 }
 function checkRows(rows, run) {
@@ -96,7 +96,7 @@ function checkRows(rows, run) {
 const tickCount = checkRows(table.tickCases, runTick);
 const otioCount = checkRows(table.otioCases, runOtio);
 assert.equal(tickCount, 8, 'tick rows run');
-assert.equal(otioCount, 7, 'OTIO rows run');
+assert.equal(otioCount, 13, 'OTIO rows run');
 const rate = {num:25, den:1};
 assert.throws(() => t.snapDecimalSeconds('source', '1', rate), /frame edge is required/, 'MISS T6: default edge accepted');
 assert.equal(String(t.snapDecimalSeconds('source', '0.039999999999999999999', rate, 'end').frames), '0', 'MISS T9: decimal lost a digit');

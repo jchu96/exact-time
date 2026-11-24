@@ -138,10 +138,24 @@ def _entry_frame(clock, frames, rate):
         _entry_refused(error.code, str(error))
 
 
-_OTIO_RATES = (
-    (24, 1), (25, 1), (30, 1), (48, 1), (50, 1), (60, 1),
-    (24000, 1001), (48000, 1001), (30000, 1001), (60000, 1001),
-)
+_NO_OTIO_RATE = object()
+
+
+def _otio_rate(value, explicit_rate):
+    numeric = isinstance(value, (int, float)) and not isinstance(value, bool)
+    if explicit_rate is not _NO_OTIO_RATE:
+        rate = _entry_rate(explicit_rate)
+        if not numeric or value != rate['num'] / rate['den']:
+            _entry_refused('INVALID_RATE', 'OTIO rate must match the explicit rate.')
+        return rate
+    if numeric:
+        whole = _whole_number(value)
+        if isinstance(whole, int) and 0 < whole <= 9007199254740991:
+            return {'num': whole, 'den': 1}
+        for num in (24000, 48000, 30000, 60000):
+            if value == num / 1001:
+                return {'num': num, 'den': 1001}
+    _entry_refused('INVALID_RATE', 'OTIO rate must exactly match a supported frame rate.')
 
 
 def _otio_object(value, schema):
@@ -150,25 +164,20 @@ def _otio_object(value, schema):
     return value
 
 
-def fromOtioTime(clock, value):
+def fromOtioTime(clock, value, rate=_NO_OTIO_RATE):
     time = _otio_object(value, 'RationalTime.1')
     frames = _whole_number(time.get('value'))
     if isinstance(frames, bool) or not isinstance(frames, int) or frames < 0:
         _entry_refused('INVALID_INPUT', 'OTIO value must be a non-negative whole number.')
     if frames > 9007199254740991:
         _entry_refused('UNREPRESENTABLE', 'OTIO value exceeds the safe whole-frame range.')
-    rate = time.get('rate')
-    if isinstance(rate, (int, float)):
-        for num, den in _OTIO_RATES:
-            if rate == num / den:
-                return _entry_frame(clock, frames, {'num': num, 'den': den})
-    _entry_refused('INVALID_RATE', 'OTIO rate must exactly match a supported frame rate.')
+    return _entry_frame(clock, frames, _otio_rate(time.get('rate'), rate))
 
 
-def fromOtioRange(clock, value):
+def fromOtioRange(clock, value, rate=_NO_OTIO_RATE):
     source = _otio_object(value, 'TimeRange.1')
-    start = fromOtioTime(clock, source.get('start_time'))
-    duration = fromOtioTime(clock, source.get('duration'))
+    start = fromOtioTime(clock, source.get('start_time'), rate)
+    duration = fromOtioTime(clock, source.get('duration'), rate)
     if start['rate'] != duration['rate']:
         _entry_refused('INVALID_RATE', 'OTIO range start and duration must have the same rate.')
     return {'start': start, 'duration': duration}

@@ -178,7 +178,7 @@ export function tickOracle(row: TickCase) {
 }
 
 type OtioTimeSample = { OTIO_SCHEMA: "RationalTime.1"; value: number; rate: number };
-export type OtioCase = { id: string; clock: string; expected?: unknown; refused?: string } & (
+export type OtioCase = { id: string; clock: string; rate?: { num: number; den: number }; expected?: unknown; refused?: string } & (
   | { op: "fromOtioTime"; input: OtioTimeSample }
   | { op: "fromOtioRange"; input: { OTIO_SCHEMA: "TimeRange.1"; start_time: OtioTimeSample; duration: OtioTimeSample } }
 );
@@ -189,11 +189,18 @@ export function otioOracle(row: OtioCase) {
     if (value < 0 || !Number.isInteger(value)) return "INVALID_INPUT";
     if (BigInt(value) >= 2n ** 53n) return "UNREPRESENTABLE";
     let rational;
-    switch (rate) {
-      case 23.976023976023978: rational = { num: 24000, den: 1001 }; break;
-      case 29.97002997002997: rational = { num: 30000, den: 1001 }; break;
-      case 24: case 25: rational = { num: rate, den: 1 }; break;
-      default: throw new Error(`No independent OTIO fixture rate for ${row.id}`);
+    if (row.rate) {
+      const { num, den } = rateParts(row);
+      rational = { num: Number(num), den: Number(den) };
+      if (rate !== rational.num / rational.den) return "INVALID_RATE";
+    } else if (rate === 23.976023976023978) {
+      rational = { num: 24000, den: 1001 };
+    } else if (rate === 29.97002997002997) {
+      rational = { num: 30000, den: 1001 };
+    } else if (Number.isSafeInteger(rate) && rate > 0) {
+      rational = { num: rate, den: 1 };
+    } else {
+      throw new Error(`No independent OTIO fixture rate for ${row.id}`);
     }
     return { clock: row.clock, frames: String(value), rate: rational, unit: "video-frame" };
   }

@@ -55,11 +55,12 @@ def run_tick(row):
 
 
 def run_otio(row):
+    args = [row['rate']] if 'rate' in row else []
     if row['op'] == 'fromOtioTime':
-        time = t.fromOtioTime(row['clock'], row['input'])
+        time = t.fromOtioTime(row['clock'], row['input'], *args)
         return dict(time, frames=str(time['frames']))
     assert row['op'] == 'fromOtioRange'
-    result = t.fromOtioRange(row['clock'], row['input'])
+    result = t.fromOtioRange(row['clock'], row['input'], *args)
     return {key: dict(time, frames=str(time['frames'])) for key, time in result.items()}
 
 
@@ -108,7 +109,7 @@ def run_table(override=None):
     tick_count = check_rows(table['tickCases'], run_tick)
     otio_count = check_rows(table['otioCases'], run_otio)
     assert tick_count == 8, 'tick rows run'
-    assert otio_count == 7, 'OTIO rows run'
+    assert otio_count == 13, 'OTIO rows run'
     print(f'PYTHON TABLE OK: {legacy_count + entry_count + tick_count + otio_count} cases and available inverses '
           f'(66 legacy + 33 entry + {tick_count} tick + {otio_count} OTIO)')
 
