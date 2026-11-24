@@ -40,17 +40,17 @@ def natural(value):
     return int(Decimal(value))
 
 
-def _rate_component(value):
+def _whole_number(value):
     # JSON numbers such as 25.0 denote whole components; keep frame arithmetic integral.
     return int(value) if isinstance(value, float) and value.is_integer() else value
 
 
 def _rate_components(rate):
-    return _rate_component(rate['num']), _rate_component(rate['den'])
+    return _whole_number(rate['num']), _whole_number(rate['den'])
 
 
 def rationalRate(num, den):
-    num, den = _rate_component(num), _rate_component(den)
+    num, den = _whole_number(num), _whole_number(den)
     if any(isinstance(v, bool) or not isinstance(v, int) or not 0 < v <= 9007199254740991 for v in (num, den)):
         raise _refusal('INVALID_RATE', 'Rate must contain positive safe whole numbers.')
     f = Fraction(num, den)
@@ -136,6 +136,51 @@ def _entry_frame(clock, frames, rate):
         return makeTime(clock, frames, rate, 'video-frame')
     except ValueError as error:
         _entry_refused(error.code, str(error))
+
+
+_NO_OTIO_RATE = object()
+
+
+def _otio_rate(value, explicit_rate):
+    numeric = isinstance(value, (int, float)) and not isinstance(value, bool)
+    if explicit_rate is not _NO_OTIO_RATE:
+        rate = _entry_rate(explicit_rate)
+        if not numeric or value != rate['num'] / rate['den']:
+            _entry_refused('INVALID_RATE', 'OTIO rate must match the explicit rate.')
+        return rate
+    if numeric:
+        whole = _whole_number(value)
+        if isinstance(whole, int) and 0 < whole <= 9007199254740991:
+            return {'num': whole, 'den': 1}
+        for num in (24000, 48000, 30000, 60000):
+            if value == num / 1001:
+                return {'num': num, 'den': 1001}
+    _entry_refused('INVALID_RATE', 'OTIO rate must exactly match a supported frame rate.')
+
+
+def _otio_object(value, schema):
+    if not isinstance(value, dict) or value.get('OTIO_SCHEMA') != schema:
+        _entry_refused('INVALID_INPUT', f'Expected OTIO_SCHEMA {schema}.')
+    return value
+
+
+def fromOtioTime(clock, value, rate=_NO_OTIO_RATE):
+    time = _otio_object(value, 'RationalTime.1')
+    frames = _whole_number(time.get('value'))
+    if isinstance(frames, bool) or not isinstance(frames, int) or frames < 0:
+        _entry_refused('INVALID_INPUT', 'OTIO value must be a non-negative whole number.')
+    if frames > 9007199254740991:
+        _entry_refused('UNREPRESENTABLE', 'OTIO value exceeds the safe whole-frame range.')
+    return _entry_frame(clock, frames, _otio_rate(time.get('rate'), rate))
+
+
+def fromOtioRange(clock, value, rate=_NO_OTIO_RATE):
+    source = _otio_object(value, 'TimeRange.1')
+    start = fromOtioTime(clock, source.get('start_time'), rate)
+    duration = fromOtioTime(clock, source.get('duration'), rate)
+    if start['rate'] != duration['rate']:
+        _entry_refused('INVALID_RATE', 'OTIO range start and duration must have the same rate.')
+    return {'start': start, 'duration': duration}
 
 
 def snapDecimalSeconds(clock, seconds, rate, edge=None):

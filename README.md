@@ -16,6 +16,26 @@ Pass counts as decimal strings and choose the clock the value belongs to (`sourc
 
 **At 24000/1001 fps**, frame 300 starts at 12.5125 seconds. An editor writes it as 12512 whole milliseconds. Reading `"12512"` with `fromPremiereMilliseconds` returns frame 300. Given `"12.512"` as decimal seconds instead, the instant is still in frame 299, and a range starting there begins at frame 300.
 
+## Read a timeline export
+
+Pass a parsed `RationalTime.1` object to `fromOtioTime(clock, object)`, or a `TimeRange.1` object to `fromOtioRange(clock, object)`. A range returns its start and duration on the caller’s clock. Both must have the same rate.
+
+```js
+const start = { OTIO_SCHEMA: "RationalTime.1", value: 86472, rate: 23.976023976023978 };
+const time = fromOtioTime("source", start); // frame 86472 at 24000/1001
+const range = fromOtioRange("source", {
+  OTIO_SCHEMA: "TimeRange.1",
+  start_time: start,
+  duration: { ...start, value: 96 },
+}); // starts at frame 86472 and lasts 96 frames
+```
+
+The numeric frame count must be whole and between 0 and 9,007,199,254,740,991 inclusive. A positive whole rate within that same safe range reads as N/1, including rates such as 12 and 120. The readers also recognize the exact doubles for 24000/1001, 48000/1001, 30000/1001 and 60000/1001.
+
+For any other fractional rate, pass its known rational as the third argument to either reader. For example, `fromOtioTime("source", { ...start, rate: 14.985014985014985 }, { num: 15000, den: 1001 })` returns frame 86472 at 15000/1001. An explicit rate must match the file’s double exactly, including both rates in a range. A fractional rate such as `23.976` raises `INVALID_RATE` without a matching explicit rational.
+
+The format carries no drop-frame choice. Supply that choice when rendering timecode.
+
 ## Use as a dependency
 
 Add this line to the `dependencies` object in your application's `package.json`:
@@ -98,7 +118,7 @@ npm ci
 npm run check
 ```
 
-The suite checks clock types, the independent oracle, and all 107 contract rows against both Node builds, Python and the ES3 file. The ES3 tests use Node’s VM. The table and the two design records explain the conversion rules. [Case table](contracts/time-cases.json) · [Exact frames](docs/adr/0027-exact-rational-frame-times.md) · [Choosing a frame](docs/adr/0028-time-to-frame.md)
+The suite checks clock types, the independent oracle, and all 120 contract rows against both Node builds, Python and the ES3 file. The ES3 tests use Node’s VM. The table and the two design records explain the conversion rules. [Case table](contracts/time-cases.json) · [Exact frames](docs/adr/0027-exact-rational-frame-times.md) · [Choosing a frame](docs/adr/0028-time-to-frame.md)
 
 Run `npm run release` to rebuild the standalone files, dependency tarball and their `SHA256SUMS` manifest in `dist/`. A matching version tag such as `v0.1.3` attaches those files to a GitHub release after the test matrix passes.
 

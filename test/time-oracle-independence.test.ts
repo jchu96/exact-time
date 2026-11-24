@@ -1,8 +1,10 @@
 import { readFileSync } from "node:fs";
 import { expect, test, vi } from "vitest";
-import type { Case, EntryCase, TickCase } from "./time-contract-oracle.js";
+import type { Case, EntryCase, OtioCase, TickCase } from "./time-contract-oracle.js";
 
-const table = JSON.parse(readFileSync(new URL("../contracts/time-cases.json", import.meta.url), "utf8")) as { cases: Case[]; entryCases: EntryCase[]; tickCases: TickCase[] };
+const table = JSON.parse(readFileSync(new URL("../contracts/time-cases.json", import.meta.url), "utf8")) as {
+  cases: Case[]; entryCases: EntryCase[]; tickCases: TickCase[]; otioCases: OtioCase[];
+};
 
 function unavailableExports(names: string[], module: string) {
   const exports = Object.create(null);
@@ -27,7 +29,7 @@ test("the oracle recomputes every table row with production modules unavailable"
     for (const name of exactNames) expect(() => Reflect.get(exact, name)).toThrow("production module called from the oracle");
     for (const name of rateNames) expect(() => Reflect.get(rate, name)).toThrow("production module called from the oracle");
 
-    const { oracle, oracleRefusal, entryOracle, tickOracle } = await import("./time-contract-oracle.js");
+    const { oracle, oracleRefusal, entryOracle, tickOracle, otioOracle } = await import("./time-contract-oracle.js");
     let completed = 0;
     for (const row of table.cases) {
       if (row.refused) expect(oracleRefusal(row), row.id).toBe(row.refused);
@@ -42,7 +44,11 @@ test("the oracle recomputes every table row with production modules unavailable"
       expect(tickOracle(row), row.id).toEqual(row.refused ?? row.expected);
       completed++;
     }
-    const total = table.cases.length + table.entryCases.length + table.tickCases.length;
+    for (const row of table.otioCases) {
+      expect(otioOracle(row), row.id).toEqual(row.refused ?? row.expected);
+      completed++;
+    }
+    const total = table.cases.length + table.entryCases.length + table.tickCases.length + table.otioCases.length;
     expect(completed).toBe(total);
     process.stdout.write(`independent oracle completed ${completed} of ${total}\n`);
   } finally {

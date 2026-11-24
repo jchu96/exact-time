@@ -150,6 +150,46 @@ export function toOtioRange(range: ExactRange) {
   return { OTIO_SCHEMA: "TimeRange.1" as const, start_time: toOtioTime(range.start), duration: toOtioTime(range.duration) };
 }
 
+function otioRate(rate: unknown, explicitRate?: FrameRate): FrameRate {
+  if (explicitRate !== undefined) {
+    const reduced = normalizedRate(explicitRate);
+    if (rate !== reduced.num / reduced.den) refuse("INVALID_RATE", "OTIO rate must match the explicit rate.");
+    return reduced;
+  }
+  if (typeof rate === "number" && Number.isSafeInteger(rate) && rate > 0) return { num: rate, den: 1 };
+  for (const num of [24000, 48000, 30000, 60000]) {
+    if (rate === num / 1001) return { num, den: 1001 };
+  }
+  return refuse("INVALID_RATE", "OTIO rate must exactly match a supported frame rate.");
+}
+
+function otioObject(input: unknown, schema: string): Record<string, unknown> {
+  if (typeof input !== "object" || input === null || Array.isArray(input) ||
+      !("OTIO_SCHEMA" in input) || input.OTIO_SCHEMA !== schema) {
+    refuse("INVALID_INPUT", `Expected OTIO_SCHEMA ${schema}.`);
+  }
+  return input as Record<string, unknown>;
+}
+
+export function fromOtioTime<C extends MediaClock>(clock: C, input: unknown, explicitRate?: FrameRate): ExactTime<C> {
+  const { value, rate } = otioObject(input, "RationalTime.1");
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    refuse("INVALID_INPUT", "OTIO value must be a non-negative whole number.");
+  }
+  if (value > Number.MAX_SAFE_INTEGER) refuse("UNREPRESENTABLE", "OTIO value exceeds the safe whole-frame range.");
+  return makeTime(clock, BigInt(value), otioRate(rate, explicitRate), "video-frame");
+}
+
+export function fromOtioRange<C extends MediaClock>(clock: C, input: unknown, explicitRate?: FrameRate): ExactRange<C> {
+  const range = otioObject(input, "TimeRange.1");
+  const start = fromOtioTime(clock, range.start_time, explicitRate);
+  const duration = fromOtioTime(clock, range.duration, explicitRate);
+  if (start.rate.num !== duration.rate.num || start.rate.den !== duration.rate.den) {
+    refuse("INVALID_RATE", "OTIO range start and duration must have the same rate.");
+  }
+  return { start, duration };
+}
+
 /** Exact milliseconds only; never invent an ms value for a fractional frame boundary. */
 export function exactMilliseconds(time: ExactTime): string | undefined {
   const value = time.frames * 1000n * BigInt(time.rate.den);
