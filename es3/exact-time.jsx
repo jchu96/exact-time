@@ -233,6 +233,50 @@ var ExactTime = (function () {
     function fromTicks(clock, ticks, rate) { return timeAtTicks(clock, ticks, rate, true); }
     function fromContainingTicks(clock, ticks, rate) { return timeAtTicks(clock, ticks, rate, false); }
     var otioFractionalNumerators = [24000, 48000, 30000, 60000];
+    function toOtioTime(time) {
+        if (cmp(time.frames, '9007199254740991') > 0)
+            entryRefused('UNREPRESENTABLE', 'OTIO value exceeds the safe whole-frame range.');
+        return {OTIO_SCHEMA:'RationalTime.1', value:Number(time.frames), rate:time.rate.num / time.rate.den};
+    }
+    function toOtioRange(range) {
+        if (range.start.clock !== range.duration.clock)
+            entryRefused('INVALID_INPUT', 'A range start and duration must name the same clock.');
+        return {OTIO_SCHEMA:'TimeRange.1', start_time:toOtioTime(range.start), duration:toOtioTime(range.duration)};
+    }
+    function fileTime(clock, count, timescale) {
+        parseMediaClock(clock);
+        natural(count);
+        if (natural(timescale) === '0') entryRefused('INVALID_INPUT', 'The file timescale must be positive.');
+        return {clock:clock, count:count, timescale:timescale};
+    }
+    function fileTimeToTicks(position) {
+        var time = fileTime(position.clock, position.count, position.timescale);
+        var parts = divmod(mul(time.count, TPS), time.timescale);
+        if (parts[1] !== '0') entryRefused('INEXACT', 'File time falls between whole ticks.');
+        return parts[0];
+    }
+    function fileTimeToFrames(position, rate, edge) {
+        var time = fileTime(position.clock, position.count, position.timescale);
+        rate = normalizedRate(rate);
+        if (edge !== undefined && edge !== 'start' && edge !== 'end' && edge !== 'instant')
+            entryRefused('INVALID_INPUT', 'Expected a start, end or instant edge.');
+        var parts = divmod(mul(time.count, String(rate.num)), mul(time.timescale, String(rate.den)));
+        if (parts[1] !== '0' && edge === undefined)
+            entryRefused('INEXACT', 'File time falls between whole frames.');
+        var frames = edge === 'start' && parts[1] !== '0' ? add(parts[0], '1') : parts[0];
+        return makeTime(time.clock, frames, rate, 'video-frame');
+    }
+    function toOtioFileTime(position) {
+        var time = fileTime(position.clock, position.count, position.timescale);
+        if (cmp(time.count, '9007199254740991') > 0 || cmp(time.timescale, '9007199254740991') > 0)
+            entryRefused('UNREPRESENTABLE', 'OTIO file count and timescale must be safe whole numbers.');
+        return {OTIO_SCHEMA:'RationalTime.1', value:Number(time.count), rate:Number(time.timescale)};
+    }
+    function fromOtioFileTime(clock, input) {
+        var time = fromOtioTime(clock, input);
+        if (time.rate.den !== 1) entryRefused('INVALID_RATE', 'A file timescale must be a whole rate.');
+        return fileTime(clock, time.frames, String(time.rate.num));
+    }
     function otioRate(rate, explicitRate) {
         var reduced, i, num;
         if (explicitRate !== undefined) {
@@ -310,6 +354,9 @@ var ExactTime = (function () {
         toPremiereMilliseconds:toPremiereMilliseconds,
         fromTicks:fromTicks, fromContainingTicks:fromContainingTicks, fromTimecode:fromTimecode, deriveExact:deriveExact,
         fromOtioTime:fromOtioTime, fromOtioRange:fromOtioRange,
+        toOtioTime:toOtioTime, toOtioRange:toOtioRange,
+        fileTime:fileTime, fileTimeToTicks:fileTimeToTicks, fileTimeToFrames:fileTimeToFrames,
+        toOtioFileTime:toOtioFileTime, fromOtioFileTime:fromOtioFileTime,
         renderExactTimecode:renderExactTimecode, exactSeconds:exactSeconds, offsetTime:offsetTime};
 }());
 

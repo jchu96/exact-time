@@ -20,7 +20,17 @@ const otioRange = (start_time, duration) => ({ OTIO_SCHEMA: 'TimeRange.1', start
 // A JSON exponent outside binary64's range reaches each reader as infinity.
 const overflow = JSON.rawJSON('1e400');
 const nextDoubleAboveFilmRate = 23.97602397602398;
+const { fileClockCases } = JSON.parse(readFileSync(new URL('../contracts/time-cases.json', import.meta.url), 'utf8'));
+const fileRefusals = fileClockCases.filter(row => row.refused).map(row => {
+  const position = { clock: row.clock, count: row.count, timescale: row.timescale };
+  let args = [position];
+  if (row.op === 'fileTime') args = [row.clock, row.count, row.timescale];
+  if (row.op === 'fromOtioFileTime') args = [row.clock, row.input];
+  if (row.op === 'fileTimeToFrames') args = row.edge === undefined ? [position, row.rate] : [position, row.rate, row.edge];
+  return [row.op, args, row.refused];
+});
 const wire = JSON.stringify([
+  ...fileRefusals,
   ...[23.976, 23.98, 29.97, 59.94, nextDoubleAboveFilmRate, 0, -24, 14.985014985014985, 9007199254740992, overflow, '24', true].map(rate =>
     ['fromOtioTime', ['source', otioTime(0, rate)], 'INVALID_RATE']),
   ...[-8631368.631368631, 0.5, -1, overflow, '1', true].map(value =>
@@ -32,6 +42,8 @@ const wire = JSON.stringify([
   ['fromOtioTime', ['source', otioTime(0, true), { num: 1, den: 1 }], 'INVALID_RATE'],
   ['fromOtioRange', ['reel', otioRange(otioTime(0, 24), otioTime(96, 25)), { num: 24, den: 1 }], 'INVALID_RATE'],
   ['fromOtioTime', ['source', otioTime(9007199254740992, 24)], 'UNREPRESENTABLE'],
+  ['toOtioTime', [['source', '9007199254740992', rate]], 'UNREPRESENTABLE'],
+  ['toOtioRange', [['source', '0', rate], ['reel', '1', rate]], 'INVALID_INPUT'],
   ['fromOtioTime', ['source', { value: 0, rate: 24 }], 'INVALID_INPUT'],
   ['fromOtioTime', ['source', { ...otioTime(0, 24), OTIO_SCHEMA: 'RationalTime.2' }], 'INVALID_INPUT'],
   ['fromOtioTime', ['day', otioTime(0, 24)], 'INVALID_INPUT'],
@@ -71,8 +83,10 @@ import exact_time
 refusals = []
 for name, args, expected in json.load(sys.stdin):
     try:
-        if name == 'renderExactTimecode':
+        if name in ('renderExactTimecode', 'toOtioTime'):
             args = [exact_time.exactTime(*args[0])]
+        if name == 'toOtioRange':
+            args = [dict(start=exact_time.exactTime(*args[0]), duration=exact_time.exactTime(*args[1]))]
         if name == 'mediaClockSchema.parse':
             exact_time.mediaClockSchema.parse(*args)
         else:
@@ -103,7 +117,7 @@ print(json.dumps(dict(names=[n for n in dir(exact_time) if not n.startswith('_')
 const nodeOnly = [
   'ACCEPTED_RATES', 'exactMilliseconds', 'fromBoundaryMilliseconds', 'modelTime',
   'offsetApproximate', 'rateError', 'rateSchema', 'renderApproximate',
-  'timecodeSpecSchema', 'toOtioRange', 'toOtioTime',
+  'timecodeSpecSchema',
 ];
 // Existing Python adapters, implementation helpers and unprefixed standard-library imports.
 const pythonOnly = [
@@ -115,7 +129,7 @@ const pythonOnly = [
 // These exports exist only in the TypeScript declarations.
 const typesOnly = [
   'ApproximateTime', 'DecimalFrameTime', 'ExactRange', 'ExactTime', 'FrameEdge', 'FrameRate',
-  'MediaClock', 'SnappedTime', 'TimecodeSpec',
+  'FileTime', 'MediaClock', 'SnappedTime', 'TimecodeSpec',
 ];
 
 test('OTIO times and ranges round trip through every reader at ten named rates, 120/1 and explicit 15000/1001', () => {
@@ -134,6 +148,8 @@ test('OTIO times and ranges round trip through every reader at ten named rates, 
     for (const api of [esm, cjs, panel]) {
       const start = api.exactTime('reel', '86472', rate);
       const duration = api.exactTime('reel', '96', rate);
+      expect(api.toOtioTime(start)).toEqual(time);
+      expect(api.toOtioRange({ start, duration })).toEqual(range);
       expect(api.fromOtioTime('reel', time, ...args)).toEqual(start);
       expect(api.fromOtioRange('reel', range, ...args)).toEqual({ start, duration });
     }
@@ -145,6 +161,8 @@ import exact_time as t
 for rate, args, time, span in json.load(sys.stdin):
     start = t.exactTime('reel', '86472', rate)
     duration = t.exactTime('reel', '96', rate)
+    assert t.toOtioTime(start) == time, rate
+    assert t.toOtioRange(dict(start=start, duration=duration)) == span, rate
     assert t.fromOtioTime('reel', time, *args) == start, rate
     assert t.fromOtioRange('reel', span, *args) == dict(start=start, duration=duration), rate
 `, dist], { input: JSON.stringify(samples) });
@@ -200,7 +218,9 @@ test.each(probes.map(([name, args, expected], i) => [name, args, expected, pytho
   'refusals match for %s(%j) → %s', (name, args, expected, pythonRefusal) => {
     const refusal = name === 'mediaClockSchema.parse' ? { code: expected, message: clockRefusal } : { code: expected };
     for (const [form, api] of [['CommonJS', cjs], ['ES module', esm], ['ES3', panel]]) {
-      const callArgs = name === 'renderExactTimecode' ? [api.exactTime(...args[0])] : args;
+      let callArgs = args;
+      if (name === 'renderExactTimecode' || name === 'toOtioTime') callArgs = [api.exactTime(...args[0])];
+      if (name === 'toOtioRange') callArgs = [{ start: api.exactTime(...args[0]), duration: api.exactTime(...args[1]) }];
       const parse = name === 'mediaClockSchema.parse' ? api.mediaClockSchema.parse : api[name];
       expect(() => parse(...callArgs), form + ' ' + name).toThrow(expect.objectContaining(refusal));
     }

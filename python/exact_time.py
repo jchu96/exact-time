@@ -141,6 +141,72 @@ def _entry_frame(clock, frames, rate):
 _NO_OTIO_RATE = object()
 
 
+def toOtioTime(time):
+    if time['frames'] > 9007199254740991:
+        _entry_refused('UNREPRESENTABLE', 'OTIO value exceeds the safe whole-frame range.')
+    rate = time['rate']
+    return {'OTIO_SCHEMA': 'RationalTime.1', 'value': time['frames'], 'rate': rate['num'] / rate['den']}
+
+
+def toOtioRange(span):
+    if span['start']['clock'] != span['duration']['clock']:
+        _entry_refused('INVALID_INPUT', 'A range start and duration must name the same clock.')
+    return {'OTIO_SCHEMA': 'TimeRange.1', 'start_time': toOtioTime(span['start']),
+            'duration': toOtioTime(span['duration'])}
+
+
+def _file_parts(position):
+    mediaClockSchema.parse(position['clock'])
+    count, timescale = natural(position['count']), natural(position['timescale'])
+    if not timescale:
+        _entry_refused('INVALID_INPUT', 'The file timescale must be positive.')
+    return count, timescale
+
+
+def fileTime(clock, count, timescale):
+    position = dict(clock=clock, count=count, timescale=timescale)
+    _file_parts(position)
+    return position
+
+
+def fileTimeToTicks(position):
+    count, timescale = _file_parts(position)
+    ticks, remainder = divmod(count * TICKS_PER_SECOND, timescale)
+    if remainder:
+        _entry_refused('INEXACT', 'File time falls between whole ticks.')
+    return str(Decimal(ticks))
+
+
+_EXACT_EDGE = object()
+
+
+def fileTimeToFrames(position, rate, edge=_EXACT_EDGE):
+    count, timescale = _file_parts(position)
+    rate = _normalized_rate(rate)
+    if edge is not _EXACT_EDGE and edge not in ('start', 'end', 'instant'):
+        _entry_refused('INVALID_INPUT', 'Expected a start, end or instant edge.')
+    frames, remainder = divmod(count * rate['num'], timescale * rate['den'])
+    if remainder and edge is _EXACT_EDGE:
+        _entry_refused('INEXACT', 'File time falls between whole frames.')
+    if remainder and edge == 'start':
+        frames += 1
+    return makeTime(position['clock'], frames, rate, 'video-frame')
+
+
+def toOtioFileTime(position):
+    count, timescale = _file_parts(position)
+    if max(count, timescale) > 9007199254740991:
+        _entry_refused('UNREPRESENTABLE', 'OTIO file count and timescale must be safe whole numbers.')
+    return {'OTIO_SCHEMA': 'RationalTime.1', 'value': count, 'rate': timescale}
+
+
+def fromOtioFileTime(clock, value):
+    time = fromOtioTime(clock, value)
+    if time['rate']['den'] != 1:
+        _entry_refused('INVALID_RATE', 'A file timescale must be a whole rate.')
+    return fileTime(clock, str(time['frames']), str(time['rate']['num']))
+
+
 def _otio_rate(value, explicit_rate):
     numeric = isinstance(value, (int, float)) and not isinstance(value, bool)
     if explicit_rate is not _NO_OTIO_RATE:

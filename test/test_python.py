@@ -54,7 +54,49 @@ def run_tick(row):
     return dict(time, frames=str(time['frames']))
 
 
+def run_file(row):
+    op, clock = row['op'], row['clock']
+    if op == 'fromOtioFileTime':
+        return t.fromOtioFileTime(clock, row['input'])
+    position = t.fileTime(clock, row['count'], row['timescale'])
+    if op == 'fileTime':
+        return position
+    if op == 'fileTimeToTicks':
+        return t.fileTimeToTicks(position)
+    if op == 'fileTimeToFrames':
+        edges = [row['edge']] if 'edge' in row else []
+        time = t.fileTimeToFrames(position, row['rate'], *edges)
+        return dict(time, frames=str(time['frames']))
+    assert op == 'toOtioFileTime'
+    wire = t.toOtioFileTime(position)
+    assert t.fromOtioFileTime(clock, wire) == dict(clock=clock, count=row['count'], timescale=row['timescale']), row['id']
+    return wire
+
+
 def run_otio(row):
+    clock = row['clock']
+    if row['op'] == 'toOtioFileTime':
+        return run_file(row)
+    if row['op'] == 'toOtioTime':
+        wire = t.toOtioTime(t.exactTime(clock, row['frames'], row['rate']))
+        explicit = [row['rate']] if row.get('explicit') else []
+        restored = t.fromOtioTime(clock, wire, *explicit)
+        assert restored == dict(clock=clock, frames=int(row['frames']), rate=row['rate'], unit='video-frame'), row['id']
+        if row['rate']['den'] != 1:
+            rounded = dict(wire, rate=round(wire['rate'], 3))
+            try:
+                t.fromOtioTime(clock, rounded, *explicit)
+            except ValueError as error:
+                assert error.code == 'INVALID_RATE', row['id']
+            else:
+                raise AssertionError(row['id'] + ' accepted rounded writer rate')
+        return wire
+    if row['op'] == 'toOtioRange':
+        span = dict(start=t.exactTime(clock, row['frames'], row['rate']),
+                    duration=t.exactTime(row['durationClock'], row['duration'], row['rate']))
+        wire = t.toOtioRange(span)
+        assert t.fromOtioRange(clock, wire) == span, row['id']
+        return wire
     args = [row['rate']] if 'rate' in row else []
     if row['op'] == 'fromOtioTime':
         time = t.fromOtioTime(row['clock'], row['input'], *args)
@@ -108,10 +150,12 @@ def run_table(override=None):
     assert (legacy_count, entry_count) == (66, 33), 'MISS T8: entry rows not run'
     tick_count = check_rows(table['tickCases'], run_tick)
     otio_count = check_rows(table['otioCases'], run_otio)
+    file_count = check_rows(table['fileClockCases'], run_file)
     assert tick_count == 8, 'tick rows run'
-    assert otio_count == 13, 'OTIO rows run'
-    print(f'PYTHON TABLE OK: {legacy_count + entry_count + tick_count + otio_count} cases and available inverses '
-          f'(66 legacy + 33 entry + {tick_count} tick + {otio_count} OTIO)')
+    assert otio_count == 32, 'OTIO rows run'
+    assert file_count == 35, 'file-clock rows run'
+    print(f'PYTHON TABLE OK: {legacy_count + entry_count + tick_count + otio_count + file_count} cases and available inverses '
+          f'(66 legacy + 33 entry + {tick_count} tick + {otio_count} OTIO + {file_count} file-clock)')
 
 
 def main():

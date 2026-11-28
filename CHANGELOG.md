@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Added `toOtioTime` and `toOtioRange` to Python and ExtendScript, matching the existing Node writers.
+- Added file-clock positions in all three builds. Stream timestamps and audio sample counts can round-trip through OTIO at their original timescale. Tick and frame conversions report `INEXACT` between boundaries. Frame conversion also accepts an explicit start, end or instant edge.
+
 ## 0.1.4
 
 - `fromOtioTime` and `fromOtioRange` (Node, Python and ExtendScript), first shipped in `0.1.4-beta.1`, are released unchanged. They read OpenTimelineIO `RationalTime.1` and `TimeRange.1` objects into exact frame times and refuse a value that is not a whole number of frames or a fractional rate that is not exactly an accepted rate.
