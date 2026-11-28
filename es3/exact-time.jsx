@@ -233,6 +233,16 @@ var ExactTime = (function () {
     function fromTicks(clock, ticks, rate) { return timeAtTicks(clock, ticks, rate, true); }
     function fromContainingTicks(clock, ticks, rate) { return timeAtTicks(clock, ticks, rate, false); }
     var otioFractionalNumerators = [24000, 48000, 30000, 60000];
+    function toOtioTime(time) {
+        if (cmp(time.frames, '9007199254740991') > 0)
+            entryRefused('UNREPRESENTABLE', 'OTIO value exceeds the safe whole-frame range.');
+        return {OTIO_SCHEMA:'RationalTime.1', value:Number(time.frames), rate:time.rate.num / time.rate.den};
+    }
+    function toOtioRange(range) {
+        if (range.start.clock !== range.duration.clock)
+            entryRefused('INVALID_INPUT', 'A range start and duration must name the same clock.');
+        return {OTIO_SCHEMA:'TimeRange.1', start_time:toOtioTime(range.start), duration:toOtioTime(range.duration)};
+    }
     function otioRate(rate, explicitRate) {
         var reduced, i, num;
         if (explicitRate !== undefined) {
@@ -310,6 +320,7 @@ var ExactTime = (function () {
         toPremiereMilliseconds:toPremiereMilliseconds,
         fromTicks:fromTicks, fromContainingTicks:fromContainingTicks, fromTimecode:fromTimecode, deriveExact:deriveExact,
         fromOtioTime:fromOtioTime, fromOtioRange:fromOtioRange,
+        toOtioTime:toOtioTime, toOtioRange:toOtioRange,
         renderExactTimecode:renderExactTimecode, exactSeconds:exactSeconds, offsetTime:offsetTime};
 }());
 

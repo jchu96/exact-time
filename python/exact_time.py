@@ -141,6 +141,20 @@ def _entry_frame(clock, frames, rate):
 _NO_OTIO_RATE = object()
 
 
+def toOtioTime(time):
+    if time['frames'] > 9007199254740991:
+        _entry_refused('UNREPRESENTABLE', 'OTIO value exceeds the safe whole-frame range.')
+    rate = time['rate']
+    return {'OTIO_SCHEMA': 'RationalTime.1', 'value': time['frames'], 'rate': rate['num'] / rate['den']}
+
+
+def toOtioRange(span):
+    if span['start']['clock'] != span['duration']['clock']:
+        _entry_refused('INVALID_INPUT', 'A range start and duration must name the same clock.')
+    return {'OTIO_SCHEMA': 'TimeRange.1', 'start_time': toOtioTime(span['start']),
+            'duration': toOtioTime(span['duration'])}
+
+
 def _otio_rate(value, explicit_rate):
     numeric = isinstance(value, (int, float)) and not isinstance(value, bool)
     if explicit_rate is not _NO_OTIO_RATE:
