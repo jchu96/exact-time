@@ -20,7 +20,17 @@ const otioRange = (start_time, duration) => ({ OTIO_SCHEMA: 'TimeRange.1', start
 // A JSON exponent outside binary64's range reaches each reader as infinity.
 const overflow = JSON.rawJSON('1e400');
 const nextDoubleAboveFilmRate = 23.97602397602398;
+const { fileClockCases } = JSON.parse(readFileSync(new URL('../contracts/time-cases.json', import.meta.url), 'utf8'));
+const fileRefusals = fileClockCases.filter(row => row.refused).map(row => {
+  const position = { clock: row.clock, count: row.count, timescale: row.timescale };
+  let args = [position];
+  if (row.op === 'fileTime') args = [row.clock, row.count, row.timescale];
+  if (row.op === 'fromOtioFileTime') args = [row.clock, row.input];
+  if (row.op === 'fileTimeToFrames') args = row.edge === undefined ? [position, row.rate] : [position, row.rate, row.edge];
+  return [row.op, args, row.refused];
+});
 const wire = JSON.stringify([
+  ...fileRefusals,
   ...[23.976, 23.98, 29.97, 59.94, nextDoubleAboveFilmRate, 0, -24, 14.985014985014985, 9007199254740992, overflow, '24', true].map(rate =>
     ['fromOtioTime', ['source', otioTime(0, rate)], 'INVALID_RATE']),
   ...[-8631368.631368631, 0.5, -1, overflow, '1', true].map(value =>

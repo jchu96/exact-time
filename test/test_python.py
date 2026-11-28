@@ -153,7 +153,7 @@ def run_table(override=None):
     file_count = check_rows(table['fileClockCases'], run_file)
     assert tick_count == 8, 'tick rows run'
     assert otio_count == 32, 'OTIO rows run'
-    assert file_count == 33, 'file-clock rows run'
+    assert file_count == 35, 'file-clock rows run'
     print(f'PYTHON TABLE OK: {legacy_count + entry_count + tick_count + otio_count + file_count} cases and available inverses '
           f'(66 legacy + 33 entry + {tick_count} tick + {otio_count} OTIO + {file_count} file-clock)')
 

@@ -11,12 +11,13 @@ A video timestamp can fall between two frames. exact-time lets an editing panel,
 | A whole frame count or a tick count on a frame boundary | `exactTime(clock, frames, rate)` or `fromTicks(clock, ticks, rate)` | Preserves the exact position. The tick grid has 254,016,000,000 ticks per second. |
 | A tick count anywhere within a frame | `fromContainingTicks(clock, ticks, rate)` | Returns the frame containing the tick, including its first tick, and requires whole ticks per frame. Omitting the rate selects the containing whole millisecond. |
 | A frame count and a known grid in ticks per frame | `ticksAtGrid(frames, grid)` | Multiplies the unsigned frame count by the positive ticks-per-frame count and returns the exact tick count as a decimal string. |
+| A timestamp from a variable-rate stream or an audio sample index | `fileTime(clock, count, timescale)` | Preserves the count in the file’s own units. Supply a target frame rate when converting to frames. |
 
 Pass counts as decimal strings and choose the clock the value belongs to (`source`, `reel` or `timeline`). A range is empty when its selected start is at or beyond its selected end.
 
 **At 24000/1001 fps**, frame 300 starts at 12.5125 seconds. An editor writes it as 12512 whole milliseconds. Reading `"12512"` with `fromPremiereMilliseconds` returns frame 300. Given `"12.512"` as decimal seconds instead, the instant is still in frame 299, and a range starting there begins at frame 300.
 
-## Read a timeline export
+## Read and write a timeline time or range
 
 Pass a parsed `RationalTime.1` object to `fromOtioTime(clock, object)`, or a `TimeRange.1` object to `fromOtioRange(clock, object)`. A range returns its start and duration on the caller’s clock. Both must have the same rate.
 
@@ -35,6 +36,43 @@ The numeric frame count must be whole and between 0 and 9,007,199,254,740,991 in
 For any other fractional rate, pass its known rational as the third argument to either reader. For example, `fromOtioTime("source", { ...start, rate: 14.985014985014985 }, { num: 15000, den: 1001 })` returns frame 86472 at 15000/1001. An explicit rate must match the file’s double exactly, including both rates in a range. A fractional rate such as `23.976` raises `INVALID_RATE` without a matching explicit rational.
 
 The format carries no drop-frame choice. Supply that choice when rendering timecode.
+
+`toOtioTime` and `toOtioRange` are available in all three builds. The writer divides the rational rate’s numerator by its denominator. Keep that double at full precision when serializing it. Use the same clock when reading the object back.
+
+```js
+const rate = { num: 30000, den: 1001 };
+const pick = exactTime("source", "107894", rate);
+const wire = toOtioTime(pick); // { OTIO_SCHEMA: "RationalTime.1", value: 107894, rate: 29.97002997002997 }
+const restored = fromOtioTime("source", JSON.parse(JSON.stringify(wire)));
+// restored.frames is 107894n, at 30000/1001 on the source clock.
+
+const duration = exactTime("source", "96", rate);
+const span = toOtioRange({ start: pick, duration });
+const range = fromOtioRange("source", span); // start 107894, duration 96 frames
+```
+
+## Work in the file’s own time units
+
+Pass the count and the positive timescale (units per second) as unpadded decimal strings. A variable-rate clip can use its stream timestamps directly. Audio at 48 kHz uses sample indices with timescale `"48000"`.
+
+```js
+const position = fileTime("source", "25", "600"); // 25/600 second
+fileTimeToTicks(position);                        // "10584000000"
+const rate = { num: 25, den: 1 };                 // position is at 25/24 frames
+try {
+  fileTimeToFrames(position, rate);
+} catch (error) {
+  console.log(error.code);                        // INEXACT
+}
+fileTimeToFrames(position, rate, "start").frames; // 2n
+fileTimeToFrames(position, rate, "end").frames;   // 1n
+fileTimeToFrames(position, rate, "instant").frames; // 1n
+
+const wire = toOtioFileTime(position);            // { OTIO_SCHEMA: "RationalTime.1", value: 25, rate: 600 }
+fromOtioFileTime("source", wire);                 // { clock: "source", count: "25", timescale: "600" }
+```
+
+An exact boundary stays on the same frame for every edge. A fractional tick raises `INEXACT`. The OTIO file-time writer accepts counts and timescales up to 9,007,199,254,740,991 and raises `UNREPRESENTABLE` above that limit.
 
 ## Use as a dependency
 
@@ -100,6 +138,7 @@ Read `error.code` in JavaScript and ExtendScript or `exc.code` in Python to dist
 | Code | Meaning |
 | --- | --- |
 | `NOT_ON_FRAME_BOUNDARY` | The requested exact position falls between frame boundaries. |
+| `INEXACT` | The file-clock position falls between whole ticks, or between frames when an exact conversion was requested. |
 | `INVALID_RATE` | The rate or rate specification is invalid, ambiguous or unsupported for the conversion. |
 | `INVALID_TIMECODE` | The label, separator, frame field or explicit drop-frame choice is invalid or missing. |
 | `UNREPRESENTABLE` | The requested representation is unavailable, such as fractional ticks per frame or a millisecond that no frame writes. |
@@ -118,7 +157,7 @@ npm ci
 npm run check
 ```
 
-The suite checks clock types, the independent oracle, and all 120 contract rows against both Node builds, Python and the ES3 file. The ES3 tests use Node’s VM. The table and the two design records explain the conversion rules. [Case table](contracts/time-cases.json) · [Exact frames](docs/adr/0027-exact-rational-frame-times.md) · [Choosing a frame](docs/adr/0028-time-to-frame.md)
+The suite checks clock types, the independent oracle, and all 174 contract rows against both Node builds, Python and the ES3 file. The ES3 tests use Node’s VM. The table and the two design records explain the conversion rules. [Case table](contracts/time-cases.json) · [Exact frames](docs/adr/0027-exact-rational-frame-times.md) · [Choosing a frame](docs/adr/0028-time-to-frame.md)
 
 Run `npm run release` to rebuild the standalone files, dependency tarball and their `SHA256SUMS` manifest in `dist/`. A matching version tag such as `v0.1.4` attaches those files to a GitHub release after the test matrix passes.
 

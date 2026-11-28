@@ -129,7 +129,7 @@ const otioCount = checkRows(table.otioCases, runOtio);
 const fileCount = checkRows(table.fileClockCases, runFile);
 assert.equal(tickCount, 8, 'tick rows run');
 assert.equal(otioCount, 32, 'OTIO rows run');
-assert.equal(fileCount, 33, 'file-clock rows run');
+assert.equal(fileCount, 35, 'file-clock rows run');
 const rate = {num:25, den:1};
 assert.throws(() => t.snapDecimalSeconds('source', '1', rate), /frame edge is required/, 'MISS T6: default edge accepted');
 assert.equal(String(t.snapDecimalSeconds('source', '0.039999999999999999999', rate, 'end').frames), '0', 'MISS T9: decimal lost a digit');

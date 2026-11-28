@@ -103,6 +103,8 @@
     {"id":"first unsafe whole frame","op":"fromOtioTime","clock":"timeline","input":{"OTIO_SCHEMA":"RationalTime.1","value":9007199254740992,"rate":25},"refused":"UNREPRESENTABLE"}
   ],
   "fileClockCases": [
+    {"id":"file-frame-reel","op":"fileTimeToFrames","clock":"reel","count":"24","timescale":"600","rate":{"num":50,"den":2},"expected":{"clock":"reel","frames":"1","rate":{"num":25,"den":1},"unit":"video-frame"}},
+    {"id":"file-otio-timeline-zero","op":"toOtioFileTime","clock":"timeline","count":"0","timescale":"90000","expected":{"OTIO_SCHEMA":"RationalTime.1","value":0,"rate":90000}},
     {"id":"file-ticks-600","op":"fileTimeToTicks","clock":"source","count":"25","timescale":"600","expected":"10584000000"},
     {"id":"file-ticks-90000","op":"fileTimeToTicks","clock":"source","count":"3003","timescale":"90000","expected":"8475667200"},
     {"id":"file-ticks-48000","op":"fileTimeToTicks","clock":"source","count":"1","timescale":"48000","expected":"5292000"},
