@@ -38,6 +38,7 @@ export type SnappedTime<C extends MediaClock = MediaClock> = ExactTime<C> & Read
   snappedTo: string; approximate: ApproximateTime;
 }>;
 export type ExactRange<C extends MediaClock = MediaClock> = { start: ExactTime<C>; duration: ExactTime<C> };
+export type FileTime<C extends MediaClock = MediaClock> = Readonly<{ clock: C; count: string; timescale: string }>;
 
 function normalizedRate(rate: FrameRate): FrameRate {
   try { return rationalRate(rate.num, rate.den); }
@@ -148,6 +149,50 @@ export function toOtioTime(time: ExactTime) {
 export function toOtioRange(range: ExactRange) {
   if (range.start.clock !== range.duration.clock) refuse("INVALID_INPUT", "A range start and duration must name the same clock.");
   return { OTIO_SCHEMA: "TimeRange.1" as const, start_time: toOtioTime(range.start), duration: toOtioTime(range.duration) };
+}
+
+function fileParts(position: FileTime) {
+  namedClock(position.clock);
+  const count = natural(position.count), timescale = natural(position.timescale);
+  if (timescale === 0n) refuse("INVALID_INPUT", "The file timescale must be positive.");
+  return { count, timescale };
+}
+
+export function fileTime<C extends MediaClock>(clock: C, count: string, timescale: string): FileTime<C> {
+  const position = { clock, count, timescale };
+  fileParts(position);
+  return Object.freeze(position);
+}
+
+export function fileTimeToTicks(position: FileTime): string {
+  const { count, timescale } = fileParts(position);
+  const numerator = count * TICKS_PER_SECOND;
+  if (numerator % timescale !== 0n) refuse("INEXACT", "File time falls between whole ticks.");
+  return String(numerator / timescale);
+}
+
+export function fileTimeToFrames<C extends MediaClock>(position: FileTime<C>, rate: FrameRate, edge?: FrameEdge): ExactTime<C> {
+  const { count, timescale } = fileParts(position);
+  const reduced = normalizedRate(rate);
+  if (edge !== undefined && edge !== "start" && edge !== "end" && edge !== "instant")
+    refuse("INVALID_INPUT", "Expected a start, end or instant edge.");
+  const numerator = count * BigInt(reduced.num), denominator = timescale * BigInt(reduced.den);
+  if (edge === undefined && numerator % denominator !== 0n) refuse("INEXACT", "File time falls between whole frames.");
+  const frames = edge === "start" ? ceilQuotient(numerator, denominator) : numerator / denominator;
+  return makeTime(position.clock, frames, reduced, "video-frame");
+}
+
+export function toOtioFileTime(position: FileTime) {
+  const { count, timescale } = fileParts(position);
+  if (count > BigInt(Number.MAX_SAFE_INTEGER) || timescale > BigInt(Number.MAX_SAFE_INTEGER))
+    refuse("UNREPRESENTABLE", "OTIO file count and timescale must be safe whole numbers.");
+  return { OTIO_SCHEMA: "RationalTime.1" as const, value: Number(count), rate: Number(timescale) };
+}
+
+export function fromOtioFileTime<C extends MediaClock>(clock: C, input: unknown): FileTime<C> {
+  const time = fromOtioTime(clock, input);
+  if (time.rate.den !== 1) refuse("INVALID_RATE", "A file timescale must be a whole rate.");
+  return fileTime(clock, String(time.frames), String(time.rate.num));
 }
 
 function otioRate(rate: unknown, explicitRate?: FrameRate): FrameRate {

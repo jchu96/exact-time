@@ -119,7 +119,7 @@ const pythonOnly = [
 // These exports exist only in the TypeScript declarations.
 const typesOnly = [
   'ApproximateTime', 'DecimalFrameTime', 'ExactRange', 'ExactTime', 'FrameEdge', 'FrameRate',
-  'MediaClock', 'SnappedTime', 'TimecodeSpec',
+  'FileTime', 'MediaClock', 'SnappedTime', 'TimecodeSpec',
 ];
 
 test('OTIO times and ranges round trip through every reader at ten named rates, 120/1 and explicit 15000/1001', () => {

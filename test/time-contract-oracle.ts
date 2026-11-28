@@ -178,12 +178,80 @@ export function tickOracle(row: TickCase) {
 }
 
 type OtioTimeSample = { OTIO_SCHEMA: "RationalTime.1"; value: number; rate: number };
+type FilePositionRow = { clock: string; count: string; timescale: string };
+type FileWriterRow = FilePositionRow & { op: "toOtioFileTime" };
+export type FileCase = { id: string; expected?: unknown; refused?: string } & (
+  | FileWriterRow
+  | (FilePositionRow & { op: "fileTime" | "fileTimeToTicks" })
+  | (FilePositionRow & { op: "fileTimeToFrames"; rate: { num: number; den: number }; edge?: string })
+  | { op: "fromOtioFileTime"; clock: string; input: { OTIO_SCHEMA?: string; value: number; rate: number } }
+);
+
+// Find the enclosing boundaries by comparison, independently of production division.
+function containingUnit(instant: bigint, step: bigint) {
+  let lo = 0n, hi = 1n;
+  while (hi * step <= instant) hi *= 2n;
+  while (hi - lo > 1n) {
+    const mid = (lo + hi) >> 1n;
+    if (mid * step <= instant) lo = mid;
+    else hi = mid;
+  }
+  return { lower: lo, onBoundary: lo * step === instant };
+}
+
+export function fileOracle(row: FileCase) {
+  const { clock } = row;
+  if (!["source", "reel", "timeline"].includes(clock)) return "INVALID_INPUT";
+  if (row.op === "fromOtioFileTime") {
+    const { OTIO_SCHEMA, value, rate } = row.input;
+    if (OTIO_SCHEMA !== "RationalTime.1" || !Number.isInteger(value) || value < 0) return "INVALID_INPUT";
+    if (!Number.isSafeInteger(value)) return "UNREPRESENTABLE";
+    if (!Number.isSafeInteger(rate) || rate < 1) return "INVALID_RATE";
+    return { clock, count: String(value), timescale: String(rate) };
+  }
+  if (!/^(0|[1-9][0-9]*)$/.test(row.count) || !/^[1-9][0-9]*$/.test(row.timescale)) return "INVALID_INPUT";
+  const count = BigInt(row.count), scale = BigInt(row.timescale);
+  switch (row.op) {
+    case "fileTime": return { clock, count: row.count, timescale: row.timescale };
+    case "toOtioFileTime":
+      if (count >= 2n ** 53n || scale >= 2n ** 53n) return "UNREPRESENTABLE";
+      return { OTIO_SCHEMA: "RationalTime.1", value: Number(count), rate: Number(scale) };
+    case "fileTimeToTicks": {
+      const ticks = containingUnit(count * 254016000000n, scale);
+      return ticks.onBoundary ? String(ticks.lower) : "INEXACT";
+    }
+    case "fileTimeToFrames": {
+      const { rate, edge } = row;
+      if (![rate.num, rate.den].every(n => Number.isSafeInteger(n) && n > 0)) return "INVALID_RATE";
+      if (edge !== undefined && !["start", "end", "instant"].includes(edge)) return "INVALID_INPUT";
+      const { num, den } = rateParts(row);
+      const frame = containingUnit(count * num, scale * den);
+      if (!frame.onBoundary && edge === undefined) return "INEXACT";
+      return { clock, frames: String(frame.lower + (edge === "start" && !frame.onBoundary ? 1n : 0n)),
+        rate: { num: Number(num), den: Number(den) }, unit: "video-frame" };
+    }
+  }
+}
+
 export type OtioCase = { id: string; clock: string; rate?: { num: number; den: number }; expected?: unknown; refused?: string } & (
+  | FileWriterRow
+  | { op: "toOtioTime"; frames: string; rate: { num: number; den: number } }
+  | { op: "toOtioRange"; frames: string; duration: string; durationClock: string; rate: { num: number; den: number } }
   | { op: "fromOtioTime"; input: OtioTimeSample }
   | { op: "fromOtioRange"; input: { OTIO_SCHEMA: "TimeRange.1"; start_time: OtioTimeSample; duration: OtioTimeSample } }
 );
 
 export function otioOracle(row: OtioCase) {
+  if (row.op === "toOtioFileTime") return fileOracle(row);
+  if (row.op === "toOtioTime" || row.op === "toOtioRange") {
+    const rate = row.rate.num / row.rate.den;
+    const sample = (frames: string) => ({ OTIO_SCHEMA: "RationalTime.1", value: Number(frames), rate });
+    if (row.op === "toOtioRange" && row.clock !== row.durationClock) return "INVALID_INPUT";
+    if (BigInt(row.frames) >= 2n ** 53n || (row.op === "toOtioRange" && BigInt(row.duration) >= 2n ** 53n))
+      return "UNREPRESENTABLE";
+    if (row.op === "toOtioTime") return sample(row.frames);
+    return { OTIO_SCHEMA: "TimeRange.1", start_time: sample(row.frames), duration: sample(row.duration) };
+  }
   // The fractional doubles in these fixtures were observed in a timeline export.
   function time({ value, rate }: OtioTimeSample) {
     if (value < 0 || !Number.isInteger(value)) return "INVALID_INPUT";

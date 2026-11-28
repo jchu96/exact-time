@@ -80,7 +80,38 @@ function runTick(row) {
   const time = t.fromContainingTicks(row.clock, row.ticks, row.rate);
   return portableTime(time);
 }
+function runFile(row) {
+  if (row.op === 'fromOtioFileTime') return {...t.fromOtioFileTime(row.clock, row.input)};
+  const position = t.fileTime(row.clock, row.count, row.timescale);
+  if (row.op === 'fileTime') return {...position};
+  if (row.op === 'fileTimeToTicks') return t.fileTimeToTicks(position);
+  if (row.op === 'fileTimeToFrames') return portableTime(t.fileTimeToFrames(position, row.rate, row.edge));
+  assert.equal(row.op, 'toOtioFileTime');
+  const wire = t.toOtioFileTime(position);
+  assert.deepEqual({...t.fromOtioFileTime(row.clock, wire)}, {clock:row.clock, count:row.count, timescale:row.timescale}, row.id);
+  return {...wire};
+}
 function runOtio(row) {
+  if (row.op === 'toOtioFileTime') return runFile(row);
+  if (row.op === 'toOtioTime') {
+    const wire = t.toOtioTime(t.exactTime(row.clock, row.frames, row.rate));
+    const read = sample => portableTime(t.fromOtioTime(row.clock, sample, row.explicit ? row.rate : undefined));
+    assert.deepEqual(read(wire), {clock:row.clock, frames:row.frames, rate:row.rate, unit:'video-frame'}, row.id);
+    if (row.rate.den !== 1) {
+      const rounded = {...wire, rate:Number(wire.rate.toFixed(3))};
+      assert.throws(() => read(rounded), {code:'INVALID_RATE'}, row.id + ' rounded writer rate');
+    }
+    return {...wire};
+  }
+  if (row.op === 'toOtioRange') {
+    const start = t.exactTime(row.clock, row.frames, row.rate);
+    const duration = t.exactTime(row.durationClock, row.duration, row.rate);
+    const wire = t.toOtioRange({start, duration});
+    const restored = t.fromOtioRange(row.clock, wire);
+    assert.deepEqual(portableTime(restored.start), portableTime(start), row.id);
+    assert.deepEqual(portableTime(restored.duration), portableTime(duration), row.id);
+    return JSON.parse(JSON.stringify(wire));
+  }
   if (row.op === 'fromOtioTime') return portableTime(t.fromOtioTime(row.clock, row.input, row.rate));
   assert.equal(row.op, 'fromOtioRange');
   const range = t.fromOtioRange(row.clock, row.input, row.rate);
@@ -95,9 +126,11 @@ function checkRows(rows, run) {
 }
 const tickCount = checkRows(table.tickCases, runTick);
 const otioCount = checkRows(table.otioCases, runOtio);
+const fileCount = checkRows(table.fileClockCases, runFile);
 assert.equal(tickCount, 8, 'tick rows run');
-assert.equal(otioCount, 13, 'OTIO rows run');
+assert.equal(otioCount, 32, 'OTIO rows run');
+assert.equal(fileCount, 33, 'file-clock rows run');
 const rate = {num:25, den:1};
 assert.throws(() => t.snapDecimalSeconds('source', '1', rate), /frame edge is required/, 'MISS T6: default edge accepted');
 assert.equal(String(t.snapDecimalSeconds('source', '0.039999999999999999999', rate, 'end').frames), '0', 'MISS T9: decimal lost a digit');
-console.log(`${cjs ? 'COMMONJS' : es ? 'EXTENDSCRIPT' : 'ES MODULE'} TABLE OK: ${legacyCount + entryCount + tickCount + otioCount} cases and available inverses (66 legacy + 33 entry + ${tickCount} tick + ${otioCount} OTIO)`);
+console.log(`${cjs ? 'COMMONJS' : es ? 'EXTENDSCRIPT' : 'ES MODULE'} TABLE OK: ${legacyCount + entryCount + tickCount + otioCount + fileCount} cases and available inverses (66 legacy + 33 entry + ${tickCount} tick + ${otioCount} OTIO + ${fileCount} file-clock)`);
